@@ -27,6 +27,14 @@
 - 中文 Conventional Commits：`feat:` / `fix:` / `docs:` / `chore:` / `refactor:`，单行概括；
 - 需要时加 body：空一行后逐条 `- ` 写「改了什么 / 为什么」。
 
+## 当前进度与交接（2026-09-25）
+
+- **已完成 S0**：目录结构 + AI 文档体系 + Gradle 骨架（仅配置，无 Kotlin 代码）。首个 commit：`chore: 初始化 metro-stop 项目骨架与文档体系`。
+- **下一步 S1（装环境）**：JDK 17 + Android cmdline-tools + platform-tools + Gradle 8.13（免安装），步骤见 `docs/README.md`「自举环境」；需用户配合：手机开 USB 调试并插线。验收：`java -version` 显示 17.x、`adb devices` 列出设备。
+- **再下一步 S2（M1）**：按 `docs/spec/active/mvp-stop-counter/需求.md` 写代码。
+- **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/mvp-stop-counter/需求.md`（当前需求）→ 需要背景时读 `docs/spec/需求与方案.md`。
+- **分工**：AI 负责写代码与在本机代敲命令（会话内环境变量可能不生效，用绝对路径）；用户负责手机端操作、通勤实测与验收反馈。
+
 ## 入口
 
 - 文档索引 + 需求速览表 + 自举环境：`docs/README.md`

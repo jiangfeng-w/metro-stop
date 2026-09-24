@@ -41,3 +41,9 @@
 ## 下一步
 
 **S1 装环境**（JDK 17 + cmdline-tools + platform-tools + Gradle 8.13 免安装，红米开 USB 调试）→ **S2 开发 M1**（`gradle wrapper` + 首次编译 + 上表 MVP 需求）。里程碑与验收见 `spec/需求与方案.md` 第九节、M1 明细见 `spec/active/mvp-stop-counter/需求.md`。
+
+### 新会话接手（第一句照抄即可）
+
+> 先读 `AGENTS.md` 和 `docs/README.md`，再按 `docs/README.md` 的「下一步」继续（当前在 S1 装环境）。
+
+更细的进度与交接见 `AGENTS.md`「当前进度与交接」。
