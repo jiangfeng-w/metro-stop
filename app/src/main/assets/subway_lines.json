@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-25",
+  "city": "示例市",
+  "note": "示例数据：仅用于骨架联调，真实线路在 S5 替换。方向显式写两遍，便于人工核对。",
+  "lines": [
+    {
+      "id": "demo1",
+      "name": "示例1号线",
+      "directions": [
+        {
+          "id": "demo1_up",
+          "name": "开往 示例北站 方向",
+          "stations": [
+            { "id": "d1s1", "name": "示例南站" },
+            { "id": "d1s2", "name": "示范路站" },
+            { "id": "d1s3", "name": "试验桥站" },
+            { "id": "d1s4", "name": "样板街站" },
+            { "id": "d1s5", "name": "样例广场站" },
+            { "id": "d1s6", "name": "示意湖站" },
+            { "id": "d1s7", "name": "示例北站" }
+          ]
+        },
+        {
+          "id": "demo1_down",
+          "name": "开往 示例南站 方向",
+          "stations": [
+            { "id": "d1s7", "name": "示例北站" },
+            { "id": "d1s6", "name": "示意湖站" },
+            { "id": "d1s5", "name": "样例广场站" },
+            { "id": "d1s4", "name": "样板街站" },
+            { "id": "d1s3", "name": "试验桥站" },
+            { "id": "d1s2", "name": "示范路站" },
+            { "id": "d1s1", "name": "示例南站" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo2",
+      "name": "示例2号线",
+      "directions": [
+        {
+          "id": "demo2_east",
+          "name": "开往 示范东站 方向",
+          "stations": [
+            { "id": "d2s1", "name": "示范西站" },
+            { "id": "d2s2", "name": "样例公园站" },
+            { "id": "d2s3", "name": "示意中心站" },
+            { "id": "d2s4", "name": "实验大学站" },
+            { "id": "d2s5", "name": "示范东站" }
+          ]
+        },
+        {
+          "id": "demo2_west",
+          "name": "开往 示范西站 方向",
+          "stations": [
+            { "id": "d2s5", "name": "示范东站" },
+            { "id": "d2s4", "name": "实验大学站" },
+            { "id": "d2s3", "name": "示意中心站" },
+            { "id": "d2s2", "name": "样例公园站" },
+            { "id": "d2s1", "name": "示范西站" }
+          ]
+        }
+      ]
+    }
+  ]
+}
