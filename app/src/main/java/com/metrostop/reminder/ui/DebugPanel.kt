@@ -32,6 +32,7 @@ fun DebugPanel(
     onReplayLatest: () -> Unit,
     onPickCsv: () -> Unit,
     onLoadReport: () -> Unit,
+    onCleanLogs: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -77,6 +78,9 @@ fun DebugPanel(
                 ) { Text("回放最近一次") }
                 OutlinedButton(onClick = onPickCsv, modifier = Modifier.weight(1f)) { Text("选择 CSV…") }
                 OutlinedButton(onClick = onLoadReport, modifier = Modifier.weight(1f)) { Text("查看报告") }
+            }
+            OutlinedButton(onClick = onCleanLogs, modifier = Modifier.fillMaxWidth()) {
+                Text("立即清理日志（保留最近一次报告）")
             }
             replayReport?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall)

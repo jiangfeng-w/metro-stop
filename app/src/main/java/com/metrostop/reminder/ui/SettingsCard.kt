@@ -16,11 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** 设置卡片：提醒方式（响铃+震动 / 仅震动）、是否记录 CSV */
+/** 设置卡片：提醒方式（响铃+震动 / 仅震动）、是否记录 CSV（含日志占用） */
 @Composable
 fun SettingsCard(
     vibOnly: Boolean,
     recordCsv: Boolean,
+    logsUsage: String?,
     onVibOnly: (Boolean) -> Unit,
     onRecordCsv: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -45,7 +46,13 @@ fun SettingsCard(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("记录 CSV", style = MaterialTheme.typography.titleSmall)
-                    Text("记录传感器与事件，供回放调参（约 15 MB/小时）", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "调试用，约 15 MB/小时，自动保留最近 10 次",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (logsUsage != null) {
+                        Text(logsUsage, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
                 Switch(checked = recordCsv, onCheckedChange = onRecordCsv)
             }

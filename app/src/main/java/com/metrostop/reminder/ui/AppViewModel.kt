@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.metrostop.reminder.core.model.MonitorUiState
 import com.metrostop.reminder.core.model.RouteSpec
 import com.metrostop.reminder.core.route.LineRepository
+import com.metrostop.reminder.platform.data.LogsCleaner
 import com.metrostop.reminder.platform.data.SettingsStore
 import com.metrostop.reminder.platform.service.MonitorService
 import com.metrostop.reminder.platform.service.MonitorStarter
@@ -44,7 +45,8 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
     private val _alertVibOnly = MutableStateFlow(false)
     val alertVibOnly: StateFlow<Boolean> = _alertVibOnly.asStateFlow()
 
-    private val _recordCsv = MutableStateFlow(true)
+    /** 新装默认关（csv-storage-policy）；老用户由 init 里的一次性迁移显式写回 true */
+    private val _recordCsv = MutableStateFlow(false)
     val recordCsv: StateFlow<Boolean> = _recordCsv.asStateFlow()
 
     private val _debugExpanded = MutableStateFlow(false)
@@ -56,11 +58,17 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
     private val _replayReport = MutableStateFlow<String?>(null)
     val replayReport: StateFlow<String?> = _replayReport.asStateFlow()
 
+    /** logs 目录占用（设置卡片显示）；null = 还没扫过 */
+    private val _logsUsage = MutableStateFlow<String?>(null)
+    val logsUsage: StateFlow<String?> = _logsUsage.asStateFlow()
+
     /** 服务写入的状态（唯一来源） */
     val monitorState: StateFlow<MonitorUiState> = SessionHolder.state
 
     init {
         viewModelScope.launch {
+            // 老用户迁移（默认值 true → false 的兼容）：先落成显式值再 collect，避免开关显示错位
+            runCatching { settings.migrateRecordCsvIfNeeded() }
             loadRoutes()
             settings.lastRoute.collect { saved ->
                 if (saved.lineId != null && _selection.value.lineId == null) {
@@ -71,7 +79,12 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch {
             settings.alertMode.collect { _alertVibOnly.value = it == SettingsStore.MODE_VIB_ONLY }
         }
-        viewModelScope.launch { settings.recordCsv.collect { _recordCsv.value = it } }
+        viewModelScope.launch {
+            settings.recordCsv.collect {
+                _recordCsv.value = it
+                refreshLogsUsage()
+            }
+        }
         viewModelScope.launch { settings.debugExpanded.collect { _debugExpanded.value = it } }
         viewModelScope.launch { settings.keepAliveGuideDone.collect { _keepAliveDone.value = it } }
     }
@@ -225,6 +238,41 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
     fun setRecordCsv(enabled: Boolean) {
         _recordCsv.value = enabled
         viewModelScope.launch { settings.setRecordCsv(enabled) }
+    }
+
+    /** 扫描 logs 占用（设置卡片 / 调试面板显示）；IO 线程 */
+    fun refreshLogsUsage() {
+        viewModelScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching { LogsCleaner(appContext).scan().readable() }.getOrNull()
+            }
+            _logsUsage.value = text
+        }
+    }
+
+    /**
+     * 手动「立即清理日志」：删掉全部已完成会话，保留 `replay_report.txt`。
+     * 正在录制时保护当前会话（按服务暴露的 csvDir 会话名判断）。
+     */
+    fun cleanLogsNow() {
+        viewModelScope.launch {
+            val active = withContext(Dispatchers.IO) {
+                // 正在录制时，CsvRecorder 的会话名 = 最新 sensor CSV 的 stamp（由服务持有）
+                // 这里只保护「监测中」的会话，避免删到正在写的文件
+                runCatching {
+                    val dir = appContext.getExternalFilesDir("logs") ?: return@runCatching null
+                    if (!MonitorService.isRunning) return@runCatching null
+                    dir.listFiles { f -> f.isFile && f.name.startsWith("sensor_") && f.name.endsWith(".csv") }
+                        ?.maxByOrNull { it.name }
+                        ?.name?.removePrefix("sensor_")?.removeSuffix(".csv")
+                }.getOrNull()
+            }
+            val deleted = withContext(Dispatchers.IO) {
+                runCatching { LogsCleaner(appContext).cleanAll(exceptStamp = active) }.getOrDefault(0)
+            }
+            refreshLogsUsage()
+            _uiError.value = "已清理 $deleted 次会话的 CSV 日志"
+        }
     }
 
     fun setDebugExpanded(expanded: Boolean) {

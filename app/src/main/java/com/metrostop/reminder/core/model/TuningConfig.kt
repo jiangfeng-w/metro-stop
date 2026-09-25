@@ -67,6 +67,14 @@ data class TuningConfig(
     val endGraceSec: Double = 30.0,
     /** 采样断流阈值：相邻样本间隔超过它视为数据缺口 */
     val dataGapSec: Double = 5.0,
+
+    // ---------- CSV 保留策略（非算法阈值，同样集中在此避免第二处硬编码）----------
+    /** 保留最近多少次会话（三件套同删） */
+    val retentionSessions: Int = 10,
+    /** 保留最近多少天内的会话 */
+    val retentionDays: Int = 14,
+    /** logs 目录体积上限（MB），超出则从最旧会话删起 */
+    val retentionMaxMb: Int = 200,
 ) {
     companion object {
         /** 出厂默认参数（mutable 版本供调参面板使用） */

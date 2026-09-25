@@ -37,10 +37,37 @@ class SettingsStore(private val context: Context) {
     }
 
     val alertMode: Flow<String> = context.dataStore.data.map { it[K_ALERT_MODE] ?: MODE_SOUND_VIB }
-    val recordCsv: Flow<Boolean> = context.dataStore.data.map { it[K_RECORD_CSV] ?: true }
+
+    /**
+     * CSV 录制开关。**新装默认关**（csv-storage-policy：19 MB/小时无清理，日常无保留价值）。
+     *
+     * 老用户迁移见 [migrateRecordCsvIfNeeded]：已装机但没有该键的设备（= 从没拨过开关，
+     * 按旧默认一直在录）会在此显式写入 `true`，避免升级后**静默停止录制**而丢掉标定数据。
+     */
+    val recordCsv: Flow<Boolean> = context.dataStore.data.map { it[K_RECORD_CSV] ?: false }
     val keepAliveGuideDone: Flow<Boolean> = context.dataStore.data.map { it[K_KEEPALIVE_DONE] ?: false }
     val firstRunDone: Flow<Boolean> = context.dataStore.data.map { it[K_FIRST_RUN_DONE] ?: false }
     val debugExpanded: Flow<Boolean> = context.dataStore.data.map { it[K_DEBUG_EXPANDED] ?: false }
+
+    /**
+     * 一次性迁移：把「老用户的隐式开启」落成显式值。
+     *
+     * 判据：**没有** `record_csv` 键（用户从没拨过开关 → 吃的是旧代码的 `?: true` 默认）
+     * 但**有** `last_route_line_id` 键（说明装过并且用过，是真老用户，不是全新安装）。
+     *
+     * 幂等 & 只跑一次：写入后 `record_csv` 键存在，下次直接返回 false。
+     * 在 IO 协程调用（服务 `preloadSettings`）。
+     */
+    suspend fun migrateRecordCsvIfNeeded(): Boolean {
+        var migrated = false
+        context.dataStore.edit { p ->
+            if (!p.contains(K_RECORD_CSV) && p.contains(K_LINE)) {
+                p[K_RECORD_CSV] = true
+                migrated = true
+            }
+        }
+        return migrated
+    }
 
     suspend fun saveRoute(route: RouteSpec) {
         context.dataStore.edit { p ->

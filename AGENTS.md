@@ -62,13 +62,23 @@
   2. **「车上中途开始」时第一个真实到站被吞**（用户反馈：「上车站→目的站只差 1 站，却要摇两次才提醒」）→ 首站忽略规则只看 `hasRun`，未区分开始姿势。新增 `TuningConfig.startMovingConfirmSec` + `StationStopDetector.startedInMotion`（预热期内振动持续 1 s 即判定「开始时已在行驶」），该姿势下首次停站直接计数；`WARMUP_DONE` note 记 `started_in_motion` / `started_at_platform`。⚠️ **该幅度判据有已知缺陷**（站台走路也会超阈值 → 多算 1 站），已立项 [`docs/spec/active/gait-discrimination`](docs/spec/active/gait-discrimination/需求.md) 用步态识别取代，届时 `startedInMotion` / `startMovingConfirmSec` 一并删除。
   3. 通知栏看不到已运行时间 → `setUsesChronometer(true)`（系统自动走动）。
   4. 磁贴状态需收起重开通知栏才刷新 → `onStartListening` 订阅 `SessionHolder`，状态翻转即 `updateTile()`。
-- **回归资产（硬性规则 2）**：`app/src/test/resources/replay/` 下有 5 个实测文件（摇动/静置、3 站行程、车上开始单站行程 + 2 份现场事件金标准），对应 `RealCsvRegressionTest` / `RealJourneyRegressionTest` / `RealInMotionStartRegressionTest`。**改阈值必跑 `gradlew test`**（当前 **34 项**）。
+- **回归资产（硬性规则 2）**：`app/src/test/resources/replay/` 下有 5 个实测文件（摇动/静置、3 站行程、车上开始单站行程 + 2 份现场事件金标准），对应 `RealCsvRegressionTest` / `RealJourneyRegressionTest` / `RealInMotionStartRegressionTest`，另有纯逻辑套件 `CsvReplayTest` / `FeatureExtractorTest` / `DetectorStateMachineTest` / `RouteSpecTest` / `CsvRetentionTest`。**改阈值必跑 `gradlew test`**（当前 **49 项**）。
 - **代码已提交**（2026-09-25）：`091bd5c feat: S2(M1) 到站计数主链路实现（core/platform/ui + 回归资产）` + `2bc00ee docs: S2(M1) 实机验收记录与交接更新`。
 - **已立项的新需求（2026-09-25 讨论后落档，见 `docs/README.md` 速览表）**：
   1. `gait-discrimination`（`ready`）—— 步态识别取代 `startedInMotion` 幅度判据，修「站台走路 → 多算 1 站」；零新增权限；**前置：用户补录走路 / 乘车 CSV 标定阈值**；
-  2. `csv-storage-policy`（`ready`，小改动可立即做）—— `record_csv` 默认关闭 + 保留最近 10 次 / 14 天 / 200 MB 自动清理（现状每次 12–19 MB 且无清理）；
+  2. `csv-storage-policy`（`in-progress`，**代码已完成**）—— `record_csv` 默认关闭 + 保留最近 10 次 / 14 天 / 200 MB 自动清理；
   3. `trip-history-db`（`planned`，归 M3）—— SQLite 存行程摘要与停站明细（与 CSV 解耦），最简历史列表；**开工前需定文档第四节 5 项待决策**。
-- ⏸ **开发暂停（2026-09-25，用户决定）**：先等真实通勤实测与标定 CSV 回传，**AI 在此期间不改代码**；数据到手后按「再下一步」顺序继续。
+- ✅ **`csv-storage-policy` 代码与单测已完成**（2026-09-25，暂停解除后第一件事）：
+  - **core（纯 Kotlin）**：`core/retention/CsvRetention.kt` —— `CsvSessionScanner`（`sensor_`/`events_`/`_meta` 分组 + 缺文件容错）+ `CsvRetention.selectForDeletion`（年龄 / 次数 / 体积三规则叠加，`activeStamp` 永不删，返回最旧在前）；`TuningConfig` 新增 `retentionSessions=10` / `retentionDays=14` / `retentionMaxMb=200`；
+  - **platform**：`LogsCleaner`（IO 薄壳：`scan()` 占用 / `clean()` 按策略 / `cleanAll()` 手动清空；只碰会话三件套，`replay_report.txt` 与未知文件不动）；`MonitorService.beginMonitoring` 起 IO 协程清理（**无论是否在录都跑**，`activeStamp` 传本次会话名）；
+  - **默认值与迁移**：`SettingsStore.recordCsv` fallback `true→false`、`AppViewModel._recordCsv` 初值 `false`；新增 `migrateRecordCsvIfNeeded()`（无 `record_csv` 键 + 有 `last_route_line_id` 键 → 显式写 `true`，幂等），在服务 `preloadSettings` 与 `AppViewModel.init` 各调一次。**⚠️ 此迁移是实测发现的必要补丁**：原需求文档假设「已装机设备存的是显式 `true`」，真机 dump DataStore 证明**该键根本不存在**（用户从没拨过开关），只改 fallback 会让老设备静默停录、卡住步态标定取数；
+  - **UI**：`SettingsCard` 文案改「调试用，约 15 MB/小时，自动保留最近 10 次」+ 显示 `logs` 占用；`DebugPanel` 新增「立即清理日志」按钮；`AppViewModel.refreshLogsUsage()` / `cleanLogsNow()`；
+  - **测试**：新增 `CsvRetentionTest` **15 项**（三件套分组 / 缺文件容错 / 超次数 / 超天数含 14 天边界 / 超体积 / active 三项保护 / 空目录 / 去重 / 真实通勤量级 / 默认值对齐 `TuningConfig`）；`gradlew test` **49 项全绿**（原 34 不回退）；
+  - **真机**：APK 已装机，迁移**实测生效**（`run-as` 读 DataStore 见 `record_csv` 落成显式 `true`），进程无 crash。**待手机端 4 项人工验收**（详见需求文档第七节）：
+    1. 打开 App → 设置卡片「记录 CSV」应为**开** + 显示日志占用行；
+    2. 开始监测一次 → `logs` 应从 **20 次会话降到 ≤10 次**，`replay_report.txt` 仍在；
+    3. 关掉开关 → 跑一次不产生新 `sensor_*`；重开 → 三件套齐全；
+    4. 调试面板「立即清理日志」→ 会话全删、报告保留。
 - **需要用户配合的通勤实测清单**（一次出行同时完成 M1 验收 + 步态标定取数 + 锁屏压测）：
   1. 出门前：保活五步已做、通知权限已给、设置里**打开「记录 CSV」**、路线选好（或直接用磁贴走上次路线）、**手机放口袋**（别拿手里 / 别外放音乐，会抬高 vib 基线）；
   2. **关键一步：在站厅就点「开始监测」** → 走去站台 → 等车 → 上车 → 坐完整段。这样一段 CSV 里同时含「站厅走路 + 站台等待 + 真实乘车（启动/匀速/制动/停稳）」，正好供 `gait-discrimination` 标定；
@@ -77,8 +87,8 @@
   5. 回传：说一句「录好了」由 AI 用 `adb pull` 取数（Git Bash 需 `MSYS_NO_PATHCONV=1`），或自行导出；
   6. 若中途服务被杀 / 无提醒 → 记下大致时间点，便于对着 CSV 定位。
 - **再下一步**：
-  1. 用户下次通勤做**真实线路实测**（≥5 站），**顺带开 `record_csv` 录标定数据**（站厅→站台走路 2 min；真实乘车一段含启动/匀速/制动/停稳），把 CSV 导出 → 回放比对 → 结果填 `需求与方案.md` 第十节验收表；
-  2. 期间可先做 `csv-storage-policy`（小、独立）；
+  1. **用户在手机上验收 `csv-storage-policy` 4 项**（见上，约 3 分钟；重点是第 2 项：开始监测后 `logs` 应从 20 次会话降到 ≤10 次）；
+  2. 用户下次通勤做**真实线路实测**（≥5 站），**顺带录标定数据**（站厅→站台走路 2 min；真实乘车一段含启动/匀速/制动/停稳），把 CSV 导出 → 回放比对 → 结果填 `需求与方案.md` 第十节验收表；
   3. 标定数据到手后做 `gait-discrimination`；
   4. 之后进 **S3（M2）**：全部通知文案终稿 + 首次启动强引导 + `FOREGROUND_SERVICE_IMMEDIATE` 细化；`trip-history-db` 随 M3。
 - **本机命令速查与踩坑**：见 `docs/development.md`。**注意 HyperOS 4 beta 已禁 shell 注入按键与 `pm grant`，屏幕操作必须人工**；Git Bash 下 `/sdcard/...` 要加 `MSYS_NO_PATHCONV=1`。

@@ -23,6 +23,7 @@ import com.metrostop.reminder.core.model.EndReason
 import com.metrostop.reminder.core.replay.CsvReplay
 import com.metrostop.reminder.core.route.LineRepository
 import com.metrostop.reminder.platform.data.CsvRecorder
+import com.metrostop.reminder.platform.data.LogsCleaner
 import com.metrostop.reminder.platform.data.SettingsStore
 import com.metrostop.reminder.platform.notify.Notifier
 import com.metrostop.reminder.platform.notify.Notifications
@@ -206,6 +207,14 @@ class MonitorService : Service() {
             recorder = rec
         }
 
+        // 保留策略清理：**无论是否在录**都跑一次（否则关掉录制后旧文件会永久留在盘上），
+        // IO 协程异步执行，不占启动关键路径；失败只吞掉、不影响监测。
+        // activeStamp = 本次会话（未录制则 null）→ 绝不删正在写的文件。
+        val activeStamp = recorder?.baseName
+        scope.launch(Dispatchers.IO) {
+            runCatching { LogsCleaner(this@MonitorService).clean(config, activeStamp) }
+        }
+
         // 传感器
         val c = SensorCollector(this) { sample -> onSensorSample(sample) }
         if (!c.start()) {
@@ -226,7 +235,11 @@ class MonitorService : Service() {
     private fun preloadSettings() {
         runCatching {
             silentMode = kotlinx.coroutines.runBlocking { settings.alertMode.first() } == SettingsStore.MODE_VIB_ONLY
-            recordCsvEnabled = kotlinx.coroutines.runBlocking { settings.recordCsv.first() }
+            // 老用户迁移（默认值 true → false 的兼容）：先把隐式开启落成显式值，再读
+            recordCsvEnabled = kotlinx.coroutines.runBlocking {
+                settings.migrateRecordCsvIfNeeded()
+                settings.recordCsv.first()
+            }
         }
     }
 

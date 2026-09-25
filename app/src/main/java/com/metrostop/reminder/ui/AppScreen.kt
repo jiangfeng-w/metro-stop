@@ -44,6 +44,7 @@ fun AppScreen(vm: AppViewModel) {
     val debugExpanded by vm.debugExpanded.collectAsState()
     val keepAliveDone by vm.keepAliveDone.collectAsState()
     val replayReport by vm.replayReport.collectAsState()
+    val logsUsage by vm.logsUsage.collectAsState()
 
     val scope = rememberCoroutineScope()
     var showCsvPicker by remember { mutableStateOf(false) }
@@ -100,6 +101,7 @@ fun AppScreen(vm: AppViewModel) {
             SettingsCard(
                 vibOnly = vibOnly,
                 recordCsv = recordCsv,
+                logsUsage = logsUsage,
                 onVibOnly = vm::setAlertVibOnly,
                 onRecordCsv = vm::setRecordCsv,
             )
@@ -129,6 +131,7 @@ fun AppScreen(vm: AppViewModel) {
                     }
                 },
                 onLoadReport = vm::loadReplayReport,
+                onCleanLogs = vm::cleanLogsNow,
             )
 
             KeepAliveGuide(done = keepAliveDone, onDone = { vm.setKeepAliveDone(true) })
