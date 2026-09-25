@@ -77,8 +77,9 @@
   - **真机验收 7 项全部通过**（2026-09-25，红米 K80，详见 `docs/spec/done/csv-storage-policy/需求.md` 第 7.1 节）：老用户升级保住录制（DataStore 落成显式 `true`）→ 开始监测后 **20 次会话自动清到 1 次**（剩的正是 `activeStamp` 保护的在录会话）+ `replay_report.txt` 保留 + 无孤儿文件 → 设置卡片显示占用 →「立即清理日志」生效 → **清数据（等同新装）后开关为关、日志 0 B、监测不产生文件**；
   - 🔴 **验收中发现并修复了一个会静默改变行为的缺陷**：迁移判据里的 `last_route` 键**是用户会新写入的**，而判定每次启动都重跑 → **全新安装的用户选过一次路线后，第二次打开 App 就被误判成老用户、静默打开录制**。修法：新增一次性标记键 `record_csv_migrated`（一次判定后不再重判），判据抽成纯函数 `core/retention/shouldMigrateRecordCsv(...)` 并补 5 项回归（含端到端「新装 → 选路线 → 二次启动」）；实测确认二次启动后仍无 `record_csv` 键、`logs` 为空。
     **⚠️ 通用教训**：任何「读-判断-写」式迁移，判据里若含**用户后续会写入的键**，必须配一次性标记，否则判定会随使用而漂移。
-- **ANR 修复（2026-09-26）**：设备 ANR 堆栈确认 `MonitorService.onCreate()` 内 `preloadSettings()` 的 `runBlocking` 等待 DataStore，导致主线程卡住并延迟 `startForeground`；已改为先进入前台，再由 IO 协程加载设置。设置准备期间的服务动作会排队，停止动作会清空待执行动作。`gradlew test :app:assembleDebug` 已通过，并已通过 `adb install -r` 保留数据更新至红米 K80；待用户手动复测开始监测。未改算法路径、监测循环、传感器或系统级配置；通勤实测有效。
-- ⏸ **当前状态（2026-09-26）**：启动 ANR 修复已构建并安装，待用户手动验收；UI 拆「监测 / 设置 / 调试」三 Tab 仍列于 `docs/README.md`「下一步」，待单独实施与验收；其余新需求继续等通勤实测与标定数据回传。
+- **ANR 修复（2026-09-26）**：设备 ANR 堆栈确认 `MonitorService.onCreate()` 内 `preloadSettings()` 的 `runBlocking` 等待 DataStore，导致主线程卡住并延迟 `startForeground`；已改为先进入前台，再由 IO 协程加载设置。设置准备期间的服务动作会排队，停止动作会清空待执行动作。`gradlew test :app:assembleDebug` 已通过，并已通过 `adb install -r` 保留数据更新至红米 K80；用户手动复测确认开始监测不再卡死。
+- **三 Tab 首屏优化（2026-09-26）**：冷启动帧统计显示 21 帧中 10 帧错过帧期限、10 帧 UI 线程慢，GPU 99 分位 4 ms；主页已拆为「监测 / 设置 / 调试」三个底部 Tab，默认只组合监测页，各页只订阅自身所需状态。下拉框保持原始 Material3 交互。`gradlew test :app:assembleDebug` 通过并已保留数据安装；**冷启动与 Tab 交互仍待用户手动验收**。CSV 开关入口已移至底部「设置」Tab。未改算法路径、监测循环、传感器或系统级配置；通勤实测有效。
+- ⏸ **当前状态（2026-09-26）**：ANR 修复与三 Tab UI 改造均已提交、构建并保留数据安装；仍待用户手动验收冷启动与 Tab 操作，其余新需求继续等通勤实测与标定数据回传。
 - 🚫 **通勤实测数据回传前的禁止事项（红线，2026-09-25 约定）**——违反任一条，通勤实测结果即作废、必须重测：
   1. **禁止改动算法路径**：`core/fsm/`、`core/feature/`、`core/model/TuningConfig.kt`（含新增 / 调整任何阈值）、`platform/sensor/SensorCollector.kt`、`MonitorService` 的监测循环；
   2. **禁止卸载 App / 清除 App 数据 / 手动删除 `logs/` 内文件**（含调试面板「立即清理日志」按钮）——会丢实测准备状态与待回传的录制数据；装机只允许 `adb install -r`；

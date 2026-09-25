@@ -9,6 +9,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -18,128 +20,74 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.metrostop.reminder.platform.service.MonitorService
 import kotlinx.coroutines.launch
 import java.io.File
 
-/**
- * 单屏（总纲第八节）：顶部栏 → 路线选择 → 状态大卡片 → 控制按钮 → 折叠调试面板 → 折叠保活向导。
- * 状态全部来自 SessionHolder（服务写、UI 只读）。
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(vm: AppViewModel) {
-    val repo by vm.repo.collectAsState()
-    val selection by vm.selection.collectAsState()
-    val state by vm.monitorState.collectAsState()
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val error by vm.uiError.collectAsState()
-    val vibOnly by vm.alertVibOnly.collectAsState()
-    val recordCsv by vm.recordCsv.collectAsState()
-    val debugExpanded by vm.debugExpanded.collectAsState()
-    val keepAliveDone by vm.keepAliveDone.collectAsState()
-    val replayReport by vm.replayReport.collectAsState()
-    val logsUsage by vm.logsUsage.collectAsState()
-
     val scope = rememberCoroutineScope()
     var showCsvPicker by remember { mutableStateOf(false) }
     var csvFiles by remember { mutableStateOf<List<File>>(emptyList()) }
-
-    // 调试面板打开时拉取一次最近回放报告
-    LaunchedEffect(debugExpanded) {
-        if (debugExpanded) vm.loadReplayReport()
-    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("到站了") },
                 actions = {
-                    TextButton(onClick = {
-                        scope.launch {
-                            csvFiles = vm.listSensorCsv()
-                            showCsvPicker = true
-                        }
-                    }) { Text("回放") }
+                    if (selectedTab == 2) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                csvFiles = vm.listSensorCsv()
+                                showCsvPicker = true
+                            }
+                        }) { Text("回放") }
+                    }
                 },
             )
         },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    icon = { Text("◉") },
+                    label = { Text("监测") },
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Text("⚙") },
+                    label = { Text("设置") },
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    icon = { Text("⋯") },
+                    label = { Text("调试") },
+                )
+            }
+        },
     ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            RouteSelector(
-                repo = repo,
-                selection = selection,
-                enabled = !state.running,
-                onSelectLine = vm::selectLine,
-                onSelectDirection = vm::selectDirection,
-                onSelectBoarding = vm::selectBoarding,
-                onSelectDestination = vm::selectDestination,
-            )
-
-            StatusCard(state)
-
-            Controls(
-                state = state,
-                canStart = vm.currentRoute() != null,
-                onStart = vm::start,
-                onStop = vm::stop,
-                onTest = vm::testAlert,
-                onCorrectUp = vm::correctUp,
-                onCorrectDown = vm::correctDown,
-            )
-
-            SettingsCard(
-                vibOnly = vibOnly,
-                recordCsv = recordCsv,
-                logsUsage = logsUsage,
-                onVibOnly = vm::setAlertVibOnly,
-                onRecordCsv = vm::setRecordCsv,
-            )
-
-            DebugPanel(
-                state = state,
-                debugExpanded = debugExpanded,
-                measuredHz = state.measuredHz,
-                usingLinear = state.usingLinearSensor,
-                hasCsv = csvFiles.isNotEmpty() || state.recording,
-                replayReport = replayReport,
-                onToggle = { vm.setDebugExpanded(!debugExpanded) },
-                onReplayLatest = {
-                    scope.launch {
-                        val latest = vm.listSensorCsv().firstOrNull()
-                        if (latest == null) {
-                            vm.reportError("logs 目录暂无 sensor CSV")
-                        } else {
-                            vm.replay(latest)
-                        }
-                    }
-                },
-                onPickCsv = {
-                    scope.launch {
-                        csvFiles = vm.listSensorCsv()
-                        showCsvPicker = true
-                    }
-                },
-                onLoadReport = vm::loadReplayReport,
-                onCleanLogs = vm::cleanLogsNow,
-            )
-
-            KeepAliveGuide(done = keepAliveDone, onDone = { vm.setKeepAliveDone(true) })
-
-            Text(
-                "注意：本 App 不用定位，靠加速度识别到站；跳站快车等情况下请以站名为准，可用 ±1 纠错。",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(12.dp),
+        when (selectedTab) {
+            0 -> MonitorTab(vm, Modifier.padding(padding))
+            1 -> SettingsTab(vm, Modifier.padding(padding))
+            else -> DebugTab(
+                vm = vm,
+                csvFiles = csvFiles,
+                onCsvFilesLoaded = { csvFiles = it },
+                onShowCsvPicker = { showCsvPicker = it },
+                modifier = Modifier.padding(padding),
             )
         }
     }
@@ -176,6 +124,115 @@ fun AppScreen(vm: AppViewModel) {
             title = { Text("提示") },
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = vm::clearError) { Text("知道了") } },
+        )
+    }
+}
+
+@Composable
+private fun MonitorTab(vm: AppViewModel, modifier: Modifier = Modifier) {
+    val repo by vm.repo.collectAsState()
+    val selection by vm.selection.collectAsState()
+    val state by vm.monitorState.collectAsState()
+
+    Column(
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        RouteSelector(
+            repo = repo,
+            selection = selection,
+            enabled = !state.running,
+            onSelectLine = vm::selectLine,
+            onSelectDirection = vm::selectDirection,
+            onSelectBoarding = vm::selectBoarding,
+            onSelectDestination = vm::selectDestination,
+        )
+        StatusCard(state)
+        Controls(
+            state = state,
+            canStart = vm.currentRoute() != null,
+            onStart = vm::start,
+            onStop = vm::stop,
+            onTest = vm::testAlert,
+            onCorrectUp = vm::correctUp,
+            onCorrectDown = vm::correctDown,
+        )
+        Text(
+            "注意：本 App 不用定位，靠加速度识别到站；跳站快车等情况下请以站名为准，可用 ±1 纠错。",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+}
+
+@Composable
+private fun SettingsTab(vm: AppViewModel, modifier: Modifier = Modifier) {
+    val vibOnly by vm.alertVibOnly.collectAsState()
+    val recordCsv by vm.recordCsv.collectAsState()
+    val logsUsage by vm.logsUsage.collectAsState()
+    val keepAliveDone by vm.keepAliveDone.collectAsState()
+
+    Column(
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        SettingsCard(
+            vibOnly = vibOnly,
+            recordCsv = recordCsv,
+            logsUsage = logsUsage,
+            onVibOnly = vm::setAlertVibOnly,
+            onRecordCsv = vm::setRecordCsv,
+        )
+        KeepAliveGuide(done = keepAliveDone, onDone = { vm.setKeepAliveDone(true) })
+    }
+}
+
+@Composable
+private fun DebugTab(
+    vm: AppViewModel,
+    csvFiles: List<File>,
+    onCsvFilesLoaded: (List<File>) -> Unit,
+    onShowCsvPicker: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val state by vm.monitorState.collectAsState()
+    val debugExpanded by vm.debugExpanded.collectAsState()
+    val replayReport by vm.replayReport.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(debugExpanded) {
+        if (debugExpanded) vm.loadReplayReport()
+    }
+
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        DebugPanel(
+            state = state,
+            debugExpanded = debugExpanded,
+            measuredHz = state.measuredHz,
+            usingLinear = state.usingLinearSensor,
+            hasCsv = csvFiles.isNotEmpty() || state.recording,
+            replayReport = replayReport,
+            onToggle = { vm.setDebugExpanded(!debugExpanded) },
+            onReplayLatest = {
+                scope.launch {
+                    val latest = vm.listSensorCsv().firstOrNull()
+                    if (latest == null) {
+                        vm.reportError("logs 目录暂无 sensor CSV")
+                    } else {
+                        vm.replay(latest)
+                    }
+                }
+            },
+            onPickCsv = {
+                scope.launch {
+                    onCsvFilesLoaded(vm.listSensorCsv())
+                    onShowCsvPicker(true)
+                }
+            },
+            onLoadReport = vm::loadReplayReport,
+            onCleanLogs = vm::cleanLogsNow,
         )
     }
 }
