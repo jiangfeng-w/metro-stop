@@ -30,6 +30,7 @@ import com.metrostop.reminder.platform.notify.Notifications
 import com.metrostop.reminder.platform.power.WakeLockGuard
 import com.metrostop.reminder.platform.sensor.SensorCollector
 import com.metrostop.reminder.platform.session.SessionHolder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -96,6 +97,10 @@ class MonitorService : Service() {
     private var latestH = 0f
     private var lastOngoingMs = 0L
     private var silentMode = false
+    private var settingsReady = false
+    private var settingsLoadJob: Job? = null
+    private val pendingIntents = mutableListOf<Intent?>()
+    private var destroyed = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,26 +110,38 @@ class MonitorService : Service() {
         notifier = Notifier(context = this, alertSilent = { silentMode })
         wakeLock = WakeLockGuard(this)
         Notifications.ensureChannels(this)
-        preloadSettings()
     }
 
-    private var recordCsvEnabled = true
+    private var recordCsvEnabled = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // 硬性规则 5：首行必须 startForeground（5 秒红线）
-        val idle = notifier.buildOngoing(SessionHolder.state.value.copy(running = false))
-        startForegroundCompat(idle)
+        startForegroundCompat(notifier.buildOngoing(SessionHolder.state.value.copy(running = false)))
 
+        if (!settingsReady) {
+            if (intent?.action == ACTION_STOP) {
+                pendingIntents.clear()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelfResult(startId)
+                return START_NOT_STICKY
+            }
+            pendingIntents.add(intent)
+            if (settingsLoadJob == null) loadSettings()
+            return START_NOT_STICKY
+        }
+
+        handleIntent(intent)
+        return START_NOT_STICKY
+    }
+
+    private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
             // 这两个动作会自行管理生命周期（且可能是异步的：磁贴路径需先读「上次路线」），
             // **不能**在 onStartCommand 末尾按 isRunning 判断退出 —— 否则会当场自杀。
             ACTION_START -> startMonitoring(intent)
             ACTION_REPLAY -> startReplay(intent)
 
-            ACTION_STOP -> {
-                stopMonitoring(EndReason.MANUAL)
-                return START_NOT_STICKY
-            }
+            ACTION_STOP -> stopMonitoring(EndReason.MANUAL)
 
             ACTION_CORRECT_UP -> {
                 correct(up = true)
@@ -143,7 +160,33 @@ class MonitorService : Service() {
 
             else -> exitIfIdle()
         }
-        return START_NOT_STICKY
+    }
+
+    private fun loadSettings() {
+        settingsLoadJob = scope.launch(Dispatchers.IO) {
+            try {
+                val loadedSilentMode = settings.alertMode.first() == SettingsStore.MODE_VIB_ONLY
+                settings.migrateRecordCsvIfNeeded()
+                val loadedRecordCsv = settings.recordCsv.first()
+                main.post {
+                    if (destroyed) return@post
+                    silentMode = loadedSilentMode
+                    recordCsvEnabled = loadedRecordCsv
+                    settingsReady = true
+                    settingsLoadJob = null
+                    dispatchPendingIntents()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                main.post {
+                    if (destroyed) return@post
+                    settingsReady = true
+                    settingsLoadJob = null
+                    dispatchPendingIntents()
+                }
+            }
+        }
     }
 
     /** 瞬时动作处理完即退出，避免前台服务与「未在监测」常驻通知滞留 */
@@ -152,6 +195,12 @@ class MonitorService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    private fun dispatchPendingIntents() {
+        val queued = pendingIntents.toList()
+        pendingIntents.clear()
+        queued.forEach(::handleIntent)
     }
 
     // ---------------------------------------------------------------- 监测
@@ -199,7 +248,7 @@ class MonitorService : Service() {
         val now = SystemClock.elapsedRealtime()
         handleOutcome(s.start(now), notify = false, fromReplay = false)
 
-        // CSV 录制：**同步创建**（元数据已在 preloadSettings 中读好），
+        // CSV 录制：**同步创建**（启动准备阶段已异步加载设置），
         // 避免此前「协程异步创建 → 磁贴短会话结束时会话还没建立起 recorder」导致 0 字节文件。
         if (recordCsvEnabled && recorder == null) {
             val rec = CsvRecorder(this, route, config, scope)
@@ -229,18 +278,6 @@ class MonitorService : Service() {
         isRunning = true
         updateOngoing()
         startUiTicker()
-    }
-
-    /** 设置项预加载：服务启动时同步读一次（onCreate 非主线程敏感路径，DataStore 首读很快） */
-    private fun preloadSettings() {
-        runCatching {
-            silentMode = kotlinx.coroutines.runBlocking { settings.alertMode.first() } == SettingsStore.MODE_VIB_ONLY
-            // 老用户迁移（默认值 true → false 的兼容）：先把隐式开启落成显式值，再读
-            recordCsvEnabled = kotlinx.coroutines.runBlocking {
-                settings.migrateRecordCsvIfNeeded()
-                settings.recordCsv.first()
-            }
-        }
     }
 
     private fun registerActionReceiver() {
@@ -485,6 +522,7 @@ class MonitorService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         super.onDestroy()
         // 服务销毁前同步收尾 CSV：teardown 里的后台线程可能在进程回收前来不及执行，
         // 这里再等一次（stop 幂等，重复调用安全）。
