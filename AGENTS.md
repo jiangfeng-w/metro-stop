@@ -35,17 +35,38 @@
 ## 当前进度与交接（2026-09-25）
 
 - **已完成 S0**：目录结构 + AI 文档体系 + Gradle 骨架（仅配置，无 Kotlin 代码）。
-- **已完成 S1（环境，除手机连接外）**，本机实测落点（新会话直接用绝对路径）：
-  - JDK 17：`D:\Java\jdk-17.0.20.1+1`（系统级 `JAVA_HOME` 已存在，命令行 `java -version` 显示 17.0.20.1）；
-  - Android SDK：`D:\Android\sdk`（`ANDROID_HOME` 用户级已设）；含 `cmdline-tools\latest\`、`platform-tools` 37.0.1、`platforms\android-36`、`build-tools\36.0.0` **及 35.0.0**（AGP 8.13 默认要 35，勿删）；
-  - 许可文件已写入 `D:\Android\sdk\licenses\`（新 cmdline-tools 的 `sdkmanager --licenses` 已废弃，用 `android.exe sdk install`）；
-  - Gradle 8.13 免安装：`D:\Android\gradle-8.13`；项目 wrapper 已生成（`gradlew` / `gradlew.bat` / `gradle-wrapper.jar`，待入库）；
-  - `PATH` 用户级已追加 platform-tools、cmdline-tools\latest\bin、gradle-8.13\bin。
-- **已完成首次编译**：`gradlew.bat :app:assembleDebug` 通过（1m35s），产物 `app\build\outputs\apk\debug\app-debug.apk`（12 MB，S0 骨架无业务代码）。
-- **S1 已全部完成**：
-  - 手机通过**无线调试**连接（`adb devices` 显示 `adb-cbc62cf0-…_adb-tls-connect._tcp  device`，红米 K80 / 24117RK2CC / Android 17）。注意可能同时存在 IP 直连与 mDNS 两条通道，若 `adb` 报 "more than one device"，用 `adb disconnect <ip:port>` 清掉多余通道。
-  - 「USB 安装」开关已在手机端打开，`adb install -r` 通过：`com.metrostop.reminder` 0.1.0 已装机（注意：S0 骨架无 launcher activity，桌面上无图标属正常）。
-- **再下一步 S2（M1）**：按 `docs/spec/active/mvp-stop-counter/需求.md` 写代码（第 1/3/4/5/6 项：路线选择 UI、前台服务+传感器、状态机、CSV、调试面板+回放）。
+- **已完成 S1**：环境（JDK 17 / SDK / Gradle 8.13 免安装 / 无线调试 / 装机）+ 首次编译通过。
+- **已完成 S2（M1）代码与构建**，实际落点：
+  - **core/（纯 Kotlin，禁 android.*）**：`TuningConfig`（阈值唯一来源）、`MotionSample`/`Features`/`DetectorState`/`DetectorEvent`/`MonitorUiState`/`RouteSpec`、`RingBuffer`+`FeatureExtractor`（0.4 Hz 低通 → H；3–20 Hz 带通 RMS → vib；全因果）、`StationStopDetector`（三条件联合 + STOP_SUSPECT/BRAKE_ABORT/DATA_GAP 兜底）、`MonitorSession`（计数 / D−1 与到站提醒去重 / ±1 纠错 / 90 min 兜底 / 到站延时结束）、`CsvReplay`、`LineRepository`。
+  - **platform/**：`MonitorService`（首行 `startForeground`、specialUse、PARTIAL_WAKE_LOCK、把 ACTION 收到动作转服务）、`SensorCollector`（50 Hz，LINEAR 优先降级加速度计）、`Notifications`（3 渠道一次定稿）+`Notifier`、`MonitorActionReceiver`（**动态注册 RECEIVER_NOT_EXPORTED**，未进清单）、`SettingsStore`、`CsvRecorder`（Channel 队列 + 独立 IO scope，stop 时等落盘）、`SessionHolder`、`WakeLockGuard`、`KeepAliveHelper`、`MonitorTileService`。
+  - **ui/**：`AppScreen`/`RouteSelector`（目的站限选上车站之后）/`StatusCard`/`Controls`/`DebugPanel`（含离线回放）/`SettingsCard`/`KeepAliveGuide`/`AppViewModel`。
+  - **测试**：`gradlew test` 23 项全绿，含 `CsvReplayTest`（合成行程回放事件序列断言 + 两次回放逐行一致）、`FeatureExtractorTest`、`DetectorStateMachineTest`、`RouteSpecTest`。
+  - **构建装机**：`:app:assembleDebug` 通过（12.7 MB），`adb install -r` 成功，App 启动无 crash。
+- **S2（M1）实机验收：工程与算法部分已通过**（2026-09-25，红米 K80 真机）：
+  - ✅ 磁贴一键开始（**无需打开 App**，自动用上次路线）、常驻通知 3 s 内出现（`isForeground=true`）
+  - ✅ 前台服务类型现场确认 `types=0x40000000` = `FOREGROUND_SERVICE_TYPE_SPECIAL_USE`
+  - ✅ 通知 3 渠道属性实测符合定稿（LOW / HIGH+震动 / HIGH+静音）→ **M2 无需卸载重装**
+  - ✅ 采样率 47~50 Hz；静置基线 `vib` 均值 0.0083（阈值 0.08，10 倍余量）、`H` 均值 0.0005（阈值 0.40，800 倍余量），零误检
+  - ✅ **CSV 离线回放与现场完全一致**：真实 3 站行程 19 条事件中 18 条**时间戳逐毫秒一致**（仅 `WARMUP_DONE` 有 43 ms 启动相位差）
+  - ✅ 完整闭环真机跑通：静置→摇动→静置（计数 1）→…→`n=k` 发到站提醒 → **30.006 s 精确自动结束** → 服务退出、通知零残留
+  - ✅ `gradlew test` **29 项全绿**（含 2 个实测 CSV 回归套件）
+  - ⬜ **剩余两项需真实通勤**：地铁 ≥5 站实测（误差 ≤1）、锁屏 10 分钟 50 Hz 压测
+- **本轮实机验证修复了 5 个真实缺陷**（详见 `docs/spec/active/mvp-stop-counter/验收记录.md` 第五节）：
+  1. 🔴 **`CRUISE` 不累计静止** → 缓刹/制动特征被滤波抹平时**完全漏检到站**（把「三条件联合」实现成了门控）。修法：`CRUISE` 中也累计 `stillForSec`，`note=still_no_brake` 标记；
+  2. 🔴 **磁贴启动时服务当场 `stopSelf` 自杀**（修缺陷 5 时引入的回归：`onStartCommand` 末尾按 `isRunning` 退出，而磁贴路径异步读「上次路线」，此刻仍 false）→ CSV 全丢；
+  3. 🟡 CSV 表头被 `bufferedWriter()` 截断、短会话 0 字节 → 改 append 模式 + 表头/meta 同步写；
+  4. 🟡 自动结束后 1 s ticker 把常驻通知重新贴出 → 加 `isRunning` 守卫 + 主动 `cancel`；
+  5. 🟢 测试提醒后服务不退出（残留误导通知）；`onDestroy` 抹掉回放结果。
+- **用户实测反馈 3 问题 → 又修 4 项**（2026-09-25 晚）：
+  1. **通知不震动**（根因链两段）：① 渠道震动在 HyperOS 不生效 → 改 App 侧 `VibratorHelper` 主动调用；② 主动调用仍不震，`dumpsys vibrator_manager` 显示 `ignored_for_settings | usage: UNKNOWN` —— **无 `VibrationAttributes` 的 `createWaveform` 被归为 `UNKNOWN`，而系统 `VibrationIntensities` 中 `UNKNOWN = OFF`**（`ALARM` 才是 MEDIUM）→ 改用 `vibrate(effect, VibrationAttributes(USAGE_ALARM))`。修正后日志 `effect | finished | duration: 1016ms | usage: ALARM`。
+  2. **「车上中途开始」时第一个真实到站被吞**（用户反馈：「上车站→目的站只差 1 站，却要摇两次才提醒」）→ 首站忽略规则只看 `hasRun`，未区分开始姿势。新增 `TuningConfig.startMovingConfirmSec` + `StationStopDetector.startedInMotion`（预热期内振动持续 1 s 即判定「开始时已在行驶」），该姿势下首次停站直接计数；`WARMUP_DONE` note 记 `started_in_motion` / `started_at_platform`。
+  3. 通知栏看不到已运行时间 → `setUsesChronometer(true)`（系统自动走动）。
+  4. 磁贴状态需收起重开通知栏才刷新 → `onStartListening` 订阅 `SessionHolder`，状态翻转即 `updateTile()`。
+- **回归资产（硬性规则 2）**：`app/src/test/resources/replay/` 下有 5 个实测文件（摇动/静置、3 站行程、车上开始单站行程 + 2 份现场事件金标准），对应 `RealCsvRegressionTest` / `RealJourneyRegressionTest` / `RealInMotionStartRegressionTest`。**改阈值必跑 `gradlew test`**（当前 **34 项**）。
+- **再下一步**：
+  1. 用户下次通勤做**真实线路实测**（≥5 站），把 CSV 导出 → 回放比对 → 结果填 `需求与方案.md` 第十节验收表；
+  2. 之后进 **S3（M2）**：全部通知文案终稿 + 首次启动强引导 + `FOREGROUND_SERVICE_IMMEDIATE` 细化。
+- **本机命令速查与踩坑**：见 `docs/development.md`。**注意 HyperOS 4 beta 已禁 shell 注入按键与 `pm grant`，屏幕操作必须人工**；Git Bash 下 `/sdcard/...` 要加 `MSYS_NO_PATHCONV=1`。
 - **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/mvp-stop-counter/需求.md`（当前需求）→ 需要背景时读 `docs/spec/需求与方案.md`。
 - **分工**：AI 负责写代码与在本机代敲命令（会话内环境变量可能不生效，用绝对路径）；用户负责手机端操作、通勤实测与验收反馈。
 
