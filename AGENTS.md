@@ -59,15 +59,22 @@
   5. 🟢 测试提醒后服务不退出（残留误导通知）；`onDestroy` 抹掉回放结果。
 - **用户实测反馈 3 问题 → 又修 4 项**（2026-09-25 晚）：
   1. **通知不震动**（根因链两段）：① 渠道震动在 HyperOS 不生效 → 改 App 侧 `VibratorHelper` 主动调用；② 主动调用仍不震，`dumpsys vibrator_manager` 显示 `ignored_for_settings | usage: UNKNOWN` —— **无 `VibrationAttributes` 的 `createWaveform` 被归为 `UNKNOWN`，而系统 `VibrationIntensities` 中 `UNKNOWN = OFF`**（`ALARM` 才是 MEDIUM）→ 改用 `vibrate(effect, VibrationAttributes(USAGE_ALARM))`。修正后日志 `effect | finished | duration: 1016ms | usage: ALARM`。
-  2. **「车上中途开始」时第一个真实到站被吞**（用户反馈：「上车站→目的站只差 1 站，却要摇两次才提醒」）→ 首站忽略规则只看 `hasRun`，未区分开始姿势。新增 `TuningConfig.startMovingConfirmSec` + `StationStopDetector.startedInMotion`（预热期内振动持续 1 s 即判定「开始时已在行驶」），该姿势下首次停站直接计数；`WARMUP_DONE` note 记 `started_in_motion` / `started_at_platform`。
+  2. **「车上中途开始」时第一个真实到站被吞**（用户反馈：「上车站→目的站只差 1 站，却要摇两次才提醒」）→ 首站忽略规则只看 `hasRun`，未区分开始姿势。新增 `TuningConfig.startMovingConfirmSec` + `StationStopDetector.startedInMotion`（预热期内振动持续 1 s 即判定「开始时已在行驶」），该姿势下首次停站直接计数；`WARMUP_DONE` note 记 `started_in_motion` / `started_at_platform`。⚠️ **该幅度判据有已知缺陷**（站台走路也会超阈值 → 多算 1 站），已立项 [`docs/spec/active/gait-discrimination`](docs/spec/active/gait-discrimination/需求.md) 用步态识别取代，届时 `startedInMotion` / `startMovingConfirmSec` 一并删除。
   3. 通知栏看不到已运行时间 → `setUsesChronometer(true)`（系统自动走动）。
   4. 磁贴状态需收起重开通知栏才刷新 → `onStartListening` 订阅 `SessionHolder`，状态翻转即 `updateTile()`。
 - **回归资产（硬性规则 2）**：`app/src/test/resources/replay/` 下有 5 个实测文件（摇动/静置、3 站行程、车上开始单站行程 + 2 份现场事件金标准），对应 `RealCsvRegressionTest` / `RealJourneyRegressionTest` / `RealInMotionStartRegressionTest`。**改阈值必跑 `gradlew test`**（当前 **34 项**）。
+- **代码已提交**（2026-09-25）：`091bd5c feat: S2(M1) 到站计数主链路实现（core/platform/ui + 回归资产）` + `2bc00ee docs: S2(M1) 实机验收记录与交接更新`。
+- **已立项的新需求（2026-09-25 讨论后落档，见 `docs/README.md` 速览表）**：
+  1. `gait-discrimination`（`ready`）—— 步态识别取代 `startedInMotion` 幅度判据，修「站台走路 → 多算 1 站」；零新增权限；**前置：用户补录走路 / 乘车 CSV 标定阈值**；
+  2. `csv-storage-policy`（`ready`，小改动可立即做）—— `record_csv` 默认关闭 + 保留最近 10 次 / 14 天 / 200 MB 自动清理（现状每次 12–19 MB 且无清理）；
+  3. `trip-history-db`（`planned`，归 M3）—— SQLite 存行程摘要与停站明细（与 CSV 解耦），最简历史列表；**开工前需定文档第四节 5 项待决策**。
 - **再下一步**：
-  1. 用户下次通勤做**真实线路实测**（≥5 站），把 CSV 导出 → 回放比对 → 结果填 `需求与方案.md` 第十节验收表；
-  2. 之后进 **S3（M2）**：全部通知文案终稿 + 首次启动强引导 + `FOREGROUND_SERVICE_IMMEDIATE` 细化。
+  1. 用户下次通勤做**真实线路实测**（≥5 站），**顺带开 `record_csv` 录标定数据**（站厅→站台走路 2 min；真实乘车一段含启动/匀速/制动/停稳），把 CSV 导出 → 回放比对 → 结果填 `需求与方案.md` 第十节验收表；
+  2. 期间可先做 `csv-storage-policy`（小、独立）；
+  3. 标定数据到手后做 `gait-discrimination`；
+  4. 之后进 **S3（M2）**：全部通知文案终稿 + 首次启动强引导 + `FOREGROUND_SERVICE_IMMEDIATE` 细化；`trip-history-db` 随 M3。
 - **本机命令速查与踩坑**：见 `docs/development.md`。**注意 HyperOS 4 beta 已禁 shell 注入按键与 `pm grant`，屏幕操作必须人工**；Git Bash 下 `/sdcard/...` 要加 `MSYS_NO_PATHCONV=1`。
-- **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/mvp-stop-counter/需求.md`（当前需求）→ 需要背景时读 `docs/spec/需求与方案.md`。
+- **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/<当前需求>/需求.md`（当前：`mvp-stop-counter` 收尾 + `csv-storage-policy` / `gait-discrimination` / `trip-history-db`）→ 需要背景时读 `docs/spec/需求与方案.md`。
 - **分工**：AI 负责写代码与在本机代敲命令（会话内环境变量可能不生效，用绝对路径）；用户负责手机端操作、通勤实测与验收反馈。
 
 ## 入口
