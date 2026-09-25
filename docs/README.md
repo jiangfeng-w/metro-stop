@@ -18,7 +18,7 @@
 
 | 需求 | 状态 | 位置 | 备注 |
 |---|---|---|---|
-| MVP 核心数站提醒 | `ready` | `spec/active/mvp-stop-counter/` | 数站 + 目的站前一站/到站提醒 + 磁贴一键开始；S1 装环境后开工 |
+| MVP 核心数站提醒 | `ready` | `spec/active/mvp-stop-counter/` | 数站 + 目的站前一站/到站提醒 + 磁贴一键开始；S1 环境已就绪，待开工 M1 |
 | S0 框架与文档 | `done` | `spec/done/s0-scaffold-and-docs/` | 目录 / AI 文档 / Gradle 骨架 |
 | 线路自助管理、换乘路线、V1.5 围栏自动开始、V2 习惯学习、上岛等 | — | — | 尚未立项（见总纲第十一节「后续优化」）；立项时在 `spec/active/` 建目录 |
 
@@ -28,22 +28,22 @@
 
 ## 自举环境（新会话必读，本机 2026-09-25 实测）
 
-- **本机当前没有任何 Android 构建环境**：没有 `java`、没有 `ANDROID_HOME`、没有 `adb`、没装 Android Studio。首次构建前需按下面步骤安装（S1）。
-- 约定安装方式（轻量命令行，不用 Android Studio）：
-  1. **JDK 17**：`winget install EclipseAdoptium.Temurin.17.JDK`（无 winget 则官网 zip 解压）；验证 `java -version` 显示 17.x。
-  2. **Android cmdline-tools**：zip 解压到 `D:\Android\sdk\cmdline-tools\latest\`，然后
-     `sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"` + `sdkmanager --licenses`（全 y）；环境变量 `ANDROID_HOME=D:\Android\sdk`。
-  3. **Gradle 8.13（免安装）**：下载 `gradle-8.13-bin.zip` 解压到 `D:\Android\gradle-8.13`；在项目根执行其 `bin\gradle.bat wrapper` 生成 wrapper（此后只用 `gradlew.bat`）。
+- **S1 已完成**，本机实际落点：
+  1. **JDK 17**：`D:\Java\jdk-17.0.20.1+1`（系统级 `JAVA_HOME` 已存在）；验证 `java -version` 显示 17.0.20.1。
+  2. **Android cmdline-tools**：`D:\Android\sdk\cmdline-tools\latest\`（含 `android.exe` 新 CLI）；已装 `platform-tools` 37.0.1、`platforms;android-36`、`build-tools;36.0.0` + `35.0.0`；许可已接受（`D:\Android\sdk\licenses\`）；`ANDROID_HOME=D:\Android\sdk`（用户级）。
+     - 注意：新 cmdline-tools 已废弃 `sdkmanager --licenses`，改用 `android.exe sdk install <包>`。
+  3. **Gradle 8.13（免安装）**：`D:\Android\gradle-8.13`；项目 wrapper 已生成，此后只用 `gradlew.bat`（Git Bash 用 `./gradlew`）。
+- **首次编译已验证通过**：`gradlew.bat :app:assembleDebug` → `app\build\outputs\apk\debug\app-debug.apk`。
 - **路径提醒**：本项目在 `D:\Code\own-project\metro-stop`，常不在 IDE 工作区内；新会话若写入受限，先把 IDE 工作区切到本目录。
-- **会话内环境变量可能不生效**：直接用绝对路径调用，如 `D:\Android\sdk\platform-tools\adb.exe`、`D:\Android\gradle-8.13\bin\gradle.bat`。
+- **会话内环境变量可能不生效**：直接用绝对路径调用，如 `D:\Android\sdk\platform-tools\adb.exe`、`D:\Android\gradle-8.13\bin\gradle.bat`；跑 Gradle 命令时若报找不到 java，先 `JAVA_HOME=D:\Java\jdk-17.0.20.1+1`。
 - **国内网络（可选）**：依赖下载慢时，在 `settings.gradle.kts` 的仓库前加阿里云镜像（`https://maven.aliyun.com/repository/google`、`.../public`、`.../gradle-plugin`）。
 
 ## 下一步
 
-**S1 装环境**（JDK 17 + cmdline-tools + platform-tools + Gradle 8.13 免安装，红米开 USB 调试）→ **S2 开发 M1**（`gradle wrapper` + 首次编译 + 上表 MVP 需求）。里程碑与验收见 `spec/需求与方案.md` 第九节、M1 明细见 `spec/active/mvp-stop-counter/需求.md`。
+**S1 已全部完成**（环境 + 无线调试 + 装机验证：`com.metrostop.reminder` 0.1.0 已侧载到红米 K80）→ **S2 开发 M1**（按 `spec/active/mvp-stop-counter/需求.md` 写代码：路线选择 UI / 前台服务+传感器 / 状态机 / CSV / 调试面板+回放）。里程碑与验收见 `spec/需求与方案.md` 第九节。
 
 ### 新会话接手（第一句照抄即可）
 
-> 先读 `AGENTS.md` 和 `docs/README.md`，再按 `docs/README.md` 的「下一步」继续（当前在 S1 装环境）。
+> 先读 `AGENTS.md` 和 `docs/README.md`，再按 `docs/README.md` 的「下一步」继续（当前：S1 已完成，S2 可开工 M1）。
 
 更细的进度与交接见 `AGENTS.md`「当前进度与交接」。

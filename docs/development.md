@@ -47,3 +47,8 @@ Git Bash 下把 `gradlew.bat` 换成 `./gradlew`。
 | 日期 | 现象 | 根因 | 解决 |
 |---|---|---|---|
 | 2026-09-25 | 本机无 `java` / `ANDROID_HOME` / `adb` | 未安装 Android 构建环境 | S1 按 `docs/README.md`「自举环境」安装 |
+| 2026-09-25 | Git Bash 里 `java` / `adb` / `gradle` 找不到，PowerShell 里正常 | AI 会话环境变量在启动时快照，之后设置的读不到 | 用绝对路径调用；跑 gradlew 前先 `export JAVA_HOME='D:\Java\jdk-17.0.20.1+1'` |
+| 2026-09-25 | `android.exe sdk install` 装的包落到 `C:\Users\JF\AppData\Local\Android\Sdk`，不在 `D:\Android\sdk` | 新 CLI 未读 `ANDROID_HOME`（或读的是默认位置） | 设置 `ANDROID_HOME=D:\Android\sdk` 后重装；已装的用 `mv` 移过去 |
+| 2026-09-25 | `gradlew.bat assembleDebug` 报 `Licences not accepted: build-tools;35.0.0` | 1) `licenses/` 目录缺失；2) AGP 8.13 默认还要 build-tools **35**（compileSdk 36 也要装 35） | 手写 `D:\Android\sdk\licenses\android-sdk-license`（含 2 个哈希）；`android.exe sdk install "build-tools;35.0.0"` |
+| 2026-09-25 | `sdkmanager --licenses` 提示 `--licenses is no longer needed` | 新 cmdline-tools 已废弃该命令 | 改用 `android.exe sdk install`；许可文件手写即可 |
+| 2026-09-25 | `adb install` 报 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user` | HyperOS 默认拦截 adb 侧载（不是用户操作） | 手机 **设置 → 更多设置 → 开发者选项 → 打开「USB 安装」**（可能要登录小米账号） |

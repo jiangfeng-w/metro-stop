@@ -34,9 +34,18 @@
 
 ## 当前进度与交接（2026-09-25）
 
-- **已完成 S0**：目录结构 + AI 文档体系 + Gradle 骨架（仅配置，无 Kotlin 代码）。首个 commit：`chore: 初始化 metro-stop 项目骨架与文档体系`。
-- **下一步 S1（装环境）**：JDK 17 + Android cmdline-tools + platform-tools + Gradle 8.13（免安装），步骤见 `docs/README.md`「自举环境」；需用户配合：手机开 USB 调试并插线。验收：`java -version` 显示 17.x、`adb devices` 列出设备。
-- **再下一步 S2（M1）**：按 `docs/spec/active/mvp-stop-counter/需求.md` 写代码。
+- **已完成 S0**：目录结构 + AI 文档体系 + Gradle 骨架（仅配置，无 Kotlin 代码）。
+- **已完成 S1（环境，除手机连接外）**，本机实测落点（新会话直接用绝对路径）：
+  - JDK 17：`D:\Java\jdk-17.0.20.1+1`（系统级 `JAVA_HOME` 已存在，命令行 `java -version` 显示 17.0.20.1）；
+  - Android SDK：`D:\Android\sdk`（`ANDROID_HOME` 用户级已设）；含 `cmdline-tools\latest\`、`platform-tools` 37.0.1、`platforms\android-36`、`build-tools\36.0.0` **及 35.0.0**（AGP 8.13 默认要 35，勿删）；
+  - 许可文件已写入 `D:\Android\sdk\licenses\`（新 cmdline-tools 的 `sdkmanager --licenses` 已废弃，用 `android.exe sdk install`）；
+  - Gradle 8.13 免安装：`D:\Android\gradle-8.13`；项目 wrapper 已生成（`gradlew` / `gradlew.bat` / `gradle-wrapper.jar`，待入库）；
+  - `PATH` 用户级已追加 platform-tools、cmdline-tools\latest\bin、gradle-8.13\bin。
+- **已完成首次编译**：`gradlew.bat :app:assembleDebug` 通过（1m35s），产物 `app\build\outputs\apk\debug\app-debug.apk`（12 MB，S0 骨架无业务代码）。
+- **S1 已全部完成**：
+  - 手机通过**无线调试**连接（`adb devices` 显示 `adb-cbc62cf0-…_adb-tls-connect._tcp  device`，红米 K80 / 24117RK2CC / Android 17）。注意可能同时存在 IP 直连与 mDNS 两条通道，若 `adb` 报 "more than one device"，用 `adb disconnect <ip:port>` 清掉多余通道。
+  - 「USB 安装」开关已在手机端打开，`adb install -r` 通过：`com.metrostop.reminder` 0.1.0 已装机（注意：S0 骨架无 launcher activity，桌面上无图标属正常）。
+- **再下一步 S2（M1）**：按 `docs/spec/active/mvp-stop-counter/需求.md` 写代码（第 1/3/4/5/6 项：路线选择 UI、前台服务+传感器、状态机、CSV、调试面板+回放）。
 - **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/mvp-stop-counter/需求.md`（当前需求）→ 需要背景时读 `docs/spec/需求与方案.md`。
 - **分工**：AI 负责写代码与在本机代敲命令（会话内环境变量可能不生效，用绝对路径）；用户负责手机端操作、通勤实测与验收反馈。
 
