@@ -75,6 +75,26 @@ object CsvSessionScanner {
 }
 
 /**
+ * CSV 录制开关的一次性迁移判定（纯函数，JVM 可测）。
+ *
+ * 背景：`record_csv` 默认值由 `true` 改为 `false` 时，**老用户**（旧版本一直在静默录制）
+ * 需要显式写回 `true`，否则升级后会静默停录、卡住步态标定取数；**全新安装**必须保持 `false`。
+ *
+ * 判据：
+ * - `hasRecordCsvKey` —— 用户显式拨过开关（无论开关位置），尊重用户选择，不迁移；
+ * - `hasRouteKey` —— 用过的痕迹（选过路线）。**它会被新用户后续写入**，所以必须配合
+ *   `hasMigratedMark` 保证只判定一次，否则全新安装的用户选完路线后第二次启动就会被
+ *   误判成老用户、静默打开录制。
+ *
+ * @return true = 应显式写入 `record_csv = true`
+ */
+fun shouldMigrateRecordCsv(
+    hasMigratedMark: Boolean,
+    hasRecordCsvKey: Boolean,
+    hasRouteKey: Boolean,
+): Boolean = !hasMigratedMark && !hasRecordCsvKey && hasRouteKey
+
+/**
  * 会话级清理选择（纯函数，JVM 可测）。
  *
  * 三个规则**叠加**，都从最旧的删起：

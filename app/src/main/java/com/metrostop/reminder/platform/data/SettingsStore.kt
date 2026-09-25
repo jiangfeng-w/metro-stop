@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.metrostop.reminder.core.model.RouteSpec
+import com.metrostop.reminder.core.retention.shouldMigrateRecordCsv
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -55,16 +56,27 @@ class SettingsStore(private val context: Context) {
      * 判据：**没有** `record_csv` 键（用户从没拨过开关 → 吃的是旧代码的 `?: true` 默认）
      * 但**有** `last_route_line_id` 键（说明装过并且用过，是真老用户，不是全新安装）。
      *
-     * 幂等 & 只跑一次：写入后 `record_csv` 键存在，下次直接返回 false。
-     * 在 IO 协程调用（服务 `preloadSettings`）。
+     * **必须靠 [K_RECORD_CSV_MIGRATED] 标记做成「只判定一次」**：判据里的 `last_route`
+     * 键是用户会新写入的（选一次路线就有），若每次启动都重新判定，全新安装的用户
+     * 选完路线后第二次打开 App 就会被误判成老用户、静默打开录制。
+     * 首次调用即落标记：全新安装判定为「不需要迁移」后，后续启动不再判定。
+     *
+     * @return true = 本次真的发生了迁移（供日志 / 调试）
      */
     suspend fun migrateRecordCsvIfNeeded(): Boolean {
         var migrated = false
         context.dataStore.edit { p ->
-            if (!p.contains(K_RECORD_CSV) && p.contains(K_LINE)) {
+            if (shouldMigrateRecordCsv(
+                    hasMigratedMark = p[K_RECORD_CSV_MIGRATED] == true,
+                    hasRecordCsvKey = p.contains(K_RECORD_CSV),
+                    hasRouteKey = p.contains(K_LINE),
+                )
+            ) {
                 p[K_RECORD_CSV] = true
                 migrated = true
             }
+            // 无论是否迁移都落标记：一次判定后不再重判（关键，见 K_RECORD_CSV_MIGRATED 注释）
+            p[K_RECORD_CSV_MIGRATED] = true
         }
         return migrated
     }
@@ -108,6 +120,9 @@ class SettingsStore(private val context: Context) {
         private val K_DEST = stringPreferencesKey("last_route_destination_station_id")
         private val K_ALERT_MODE = stringPreferencesKey("alert_mode")
         private val K_RECORD_CSV = booleanPreferencesKey("record_csv")
+
+        /** 一次性迁移标记：让「老用户判定」只发生一次（见 [migrateRecordCsvIfNeeded]） */
+        private val K_RECORD_CSV_MIGRATED = booleanPreferencesKey("record_csv_migrated")
         private val K_KEEPALIVE_DONE = booleanPreferencesKey("keepalive_guide_done")
         private val K_FIRST_RUN_DONE = booleanPreferencesKey("first_run_done")
         private val K_DEBUG_EXPANDED = booleanPreferencesKey("debug_expanded")

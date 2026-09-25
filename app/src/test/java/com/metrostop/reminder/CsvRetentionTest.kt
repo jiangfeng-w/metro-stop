@@ -6,6 +6,7 @@ import com.metrostop.reminder.core.retention.CsvSession
 import com.metrostop.reminder.core.retention.CsvSessionScanner
 import com.metrostop.reminder.core.retention.LogFileEntry
 import com.metrostop.reminder.core.retention.RetentionPolicy
+import com.metrostop.reminder.core.retention.shouldMigrateRecordCsv
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -174,6 +175,59 @@ class CsvRetentionTest {
             CsvSession("20260925_120000", 1000, now),
         )
         assertTrue(CsvRetention.selectForDeletion(dup, now, policy()).isEmpty())
+    }
+
+    // ---------------------------------------------------------------- 录制开关迁移判定
+
+    @Test
+    fun `迁移_老用户无键有路线_应迁移`() {
+        assertTrue(
+            "老用户（从没拨过开关、但选过路线）应显式写回开启",
+            shouldMigrateRecordCsv(hasMigratedMark = false, hasRecordCsvKey = false, hasRouteKey = true),
+        )
+    }
+
+    @Test
+    fun `迁移_全新安装_不迁移`() {
+        assertFalse(
+            "全新安装（既无开关键也无路线）必须保持默认关",
+            shouldMigrateRecordCsv(hasMigratedMark = false, hasRecordCsvKey = false, hasRouteKey = false),
+        )
+    }
+
+    @Test
+    fun `迁移_用户显式关过_不迁移`() {
+        assertFalse(
+            "用户显式选择必须被尊重（哪怕是和默认值相同的 false）",
+            shouldMigrateRecordCsv(hasMigratedMark = false, hasRecordCsvKey = true, hasRouteKey = true),
+        )
+    }
+
+    @Test
+    fun `迁移_已判定过_不再判定`() {
+        // 关键回归：全新安装的用户选完路线后，第二次启动不能被误判成老用户
+        assertFalse(
+            "已落标记后，即使新出现了 last_route 键也不得再迁移（否则新装用户被静默打开录制）",
+            shouldMigrateRecordCsv(hasMigratedMark = true, hasRecordCsvKey = false, hasRouteKey = true),
+        )
+    }
+
+    /** 端到端语义：模拟「全新安装 → 选路线 → 二次启动」两次调用，结论必须一致为不迁移 */
+    @Test
+    fun `迁移_全新安装二次启动不被误判`() {
+        // 第一次启动：无任何键
+        var mark = false
+        var recordKey = false
+        var routeKey = false
+        val first = shouldMigrateRecordCsv(mark, recordKey, routeKey)
+        mark = true // 首次调用后落标记（不迁移时不写 record_csv）
+        assertFalse("首启不应迁移", first)
+
+        // 用户选了路线 → 写入 last_route（record_csv 仍未写，因为默认关）
+        routeKey = true
+        // 第二次启动
+        val second = shouldMigrateRecordCsv(mark, recordKey, routeKey)
+        assertFalse("二次启动仍不应迁移（缺陷回归点）", second)
     }
 
     // ---------------------------------------------------------------- 与 TuningConfig 对齐
