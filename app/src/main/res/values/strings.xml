@@ -1,4 +1,102 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">到站了</string>
+
+    <!-- 路线选择 -->
+    <string name="label_line">线路</string>
+    <string name="label_direction">方向</string>
+    <string name="label_boarding">上车站</string>
+    <string name="label_destination">目的站</string>
+    <string name="hint_pick_line">请选择线路</string>
+    <string name="hint_pick_direction">请选择方向</string>
+    <string name="hint_pick_boarding">请选择上车站</string>
+    <string name="hint_pick_destination">请选择目的站</string>
+    <string name="hint_no_destination">上车站之后没有可选站点</string>
+    <string name="stops_count">本站起共 %1$d 站</string>
+
+    <!-- 主按钮 -->
+    <string name="btn_start">开始监测</string>
+    <string name="btn_stop">结束监测</string>
+    <string name="btn_test_alert">测试提醒</string>
+    <string name="btn_correct_up">我已多过一站（＋1）</string>
+    <string name="btn_correct_down">多算了一站（−1）</string>
+    <string name="btn_export_hint">导出日志</string>
+    <string name="export_hint_text">CSV 存于：\n%1$s\n\n电脑上执行：\nadb pull /sdcard/Android/data/com.metrostop.reminder/files/logs .\\logs</string>
+
+    <!-- 状态卡片 -->
+    <string name="status_idle">未在监测</string>
+    <string name="status_current">当前站</string>
+    <string name="status_next">下一站</string>
+    <string name="status_remaining">还剩 %1$d 站</string>
+    <string name="status_arrived">已到达 %1$s</string>
+    <string name="status_dash">—</string>
+    <string name="status_elapsed">已运行 %1$s</string>
+    <string name="status_state">状态</string>
+
+    <!-- 调试面板 -->
+    <string name="panel_debug">实时调试面板</string>
+    <string name="panel_keepalive">保活五步向导</string>
+    <string name="panel_settings">设置</string>
+    <string name="debug_state">state</string>
+    <string name="debug_vib">vib</string>
+    <string name="debug_h">H</string>
+    <string name="debug_n">n</string>
+    <string name="debug_hz">采样率</string>
+    <string name="debug_sensor">传感器</string>
+    <string name="debug_sensor_linear">LINEAR_ACCELERATION</string>
+    <string name="debug_sensor_accel">ACCELEROMETER（降级）</string>
+    <string name="debug_csv">录制</string>
+    <string name="debug_csv_on">开</string>
+    <string name="debug_csv_off">关</string>
+    <string name="btn_replay">离线回放最近一次 CSV</string>
+    <string name="btn_replay_pick">选择 CSV 回放</string>
+    <string name="debug_last_event">最近事件</string>
+    <string name="debug_no_csv">logs 目录暂无 sensor CSV</string>
+    <string name="replay_done_hint">回放完成：识别 %1$d 站 / 样本 %2$d</string>
+
+    <!-- 设置 -->
+    <string name="setting_alert_mode">提醒方式</string>
+    <string name="setting_alert_sound">响铃 + 震动</string>
+    <string name="setting_alert_vib">仅震动</string>
+    <string name="setting_record">记录 CSV</string>
+
+    <!-- 通知 -->
+    <string name="notif_ongoing_title">当前 %1$s</string>
+    <string name="notif_ongoing_arrived_title">已到达目的站</string>
+    <string name="notif_ongoing_text">下一站 %1$s · 剩 %2$d / %3$d 站</string>
+    <string name="notif_idle_text">未在监测</string>
+    <string name="notif_prev_title">请准备下车</string>
+    <string name="notif_prev_text">下一站就是 %1$s（当前 %2$s），请准备下车。</string>
+    <string name="notif_arrived_title">已到站</string>
+    <string name="notif_arrived_text">已到达 %1$s，请下车。</string>
+    <string name="notif_overshoot_title">可能已坐过站</string>
+    <string name="notif_overshoot_text">您可能已坐过 %1$s，请立即确认或返程。</string>
+    <string name="notif_gap_title">传感器数据中断</string>
+    <string name="notif_gap_text">检测到采样断流，已重新预热；期间到站可能漏计，请注意核对站名。</string>
+    <string name="notif_error_title">监测未能启动</string>
+    <string name="notif_test_title">测试提醒</string>
+    <string name="notif_test_text">如果您看到本条通知且手机震动，说明提醒链路正常。</string>
+    <string name="action_stop">结束</string>
+    <string name="action_missed_one">我已多过一站</string>
+
+    <!-- 磁贴 -->
+    <string name="tile_label">到站了</string>
+    <string name="tile_sub_running">监测中</string>
+    <string name="tile_sub_idle">待开始</string>
+
+    <!-- 错误 -->
+    <string name="err_missing_route">缺少路线参数</string>
+    <string name="err_bad_route">路线非法：目的站必须在上车站之后</string>
+    <string name="err_no_sensor">设备没有可用的加速度传感器</string>
+    <string name="err_no_last_route">还没有上次路线，请先在 App 内选择路线</string>
+    <string name="err_replay_params">回放参数不完整</string>
+    <string name="err_replay_failed">回放失败：%1$s</string>
+    <string name="err_start_failed">启动失败：%1$s</string>
+
+    <!-- 保活向导 -->
+    <string name="keepalive_intro">建议按顺序完成以下 5 项设置，否则灭屏后容易被系统冻结导致漏计。</string>
+    <string name="keepalive_open">去设置</string>
+    <string name="keepalive_done">已全部了解</string>
+    <string name="notif_permission_hint">需要通知权限才能看到到站提醒</string>
+    <string name="btn_grant_notif">授予通知权限</string>
 </resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 简洁图标：白色列车符号（108dp 自适应画布，内容留在中心 72dp 安全区） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,28h32c4.4,0 8,3.6 8,8v28c0,3.3 -2.7,6 -6,6l4,6v1h-5l-4,-5h-22l-4,5h-5v-1l4,-6c-3.3,0 -6,-2.7 -6,-6V36c0,-4.4 3.6,-8 8,-8zM40,36c-1.1,0 -2,0.9 -2,2v8c0,1.1 0.9,2 2,2h28c1.1,0 2,-0.9 2,-2v-8c0,-1.1 -0.9,-2 -2,-2zM44,60m-3,0a3,3 0,1 0,6 0a3,3 0,1 0,-6 0M64,60m-3,0a3,3 0,1 0,6 0a3,3 0,1 0,-6 0" />
+</vector>

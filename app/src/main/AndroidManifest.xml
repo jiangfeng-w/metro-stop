@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 骨架清单：M1 起逐步补齐（前台服务 specialUse、QS 磁贴、桌面小组件、按钮接收器、启动 Activity 等） -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 权限清单（M1/M2 使用，S0 先锁定；本项目不含任何定位权限） -->
+    <!-- 权限清单：不含任何定位权限（硬性规则 3） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -10,5 +9,47 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <application android:label="@string/app_name" />
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MetroStop">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 前台服务：specialUse（硬性规则 5，含 SUBTYPE 说明属性） -->
+        <service
+            android:name=".platform.service.MonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="乘坐地铁时识别列车到站并提醒" />
+        </service>
+
+        <!-- QS 磁贴一键开始 -->
+        <service
+            android:name=".platform.qs.MonitorTileService"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- 注意：通知按钮接收器 MonitorActionReceiver **不在此声明**，
+             按硬性规则 6 在 MonitorService 内动态注册（RECEIVER_NOT_EXPORTED）。 -->
+    </application>
 </manifest>
