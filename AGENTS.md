@@ -49,6 +49,8 @@
   - **红线自检通过**：算法路径（core/fsm、core/feature、TuningConfig、SensorCollector、MonitorService）`git diff` **零改动**；`gradlew test` **64 项全绿**（原 54 不回退 + LabFilesTest 10 项）；`:app:assembleDebug` 通过；`adb install -r` 保留数据装机成功；App 启动零 crash；
   - ⚠️ shell 直接 `am start-foreground-service` 拉起被 HyperOS 拒（`mAllowStart=DENIED`，与 `pm grant` 被禁同源）——**属预期**，App 内前台点按钮不受影响；UI 路径（权限弹窗 / 启停 / 📍标记）**待用户今晚自检**；
   - **明早通勤采集清单见需求文档第八节**：出门前开采集 + 开记录 CSV + 正常开始监测（并行）→ 场景切换点按通知「📍标记」→ 走路/奔跑/扶梯站定/站台等车/乘车（坐+站+玩手机）/车厢走动/上下楼梯 → 到站停止采集 + 结束监测 → 回传说「录好了」由 AI 拉数（`MSYS_NO_PATHCONV=1`）。
+- **代码已提交**（2026-09-28，用户验收真机自检后）：`321ea6f feat: lab-data-collection 实验室数据采集旁路服务（标定+定位裁决取数）` + `81d5703 feat: LabScenarios 场景清单独立成文件`。**协作规则（2026-09-27 用户明确要求）：commit 前必须先征求用户同意，用户说「提交」才执行。**
+- **真机自检结果（2026-09-28 00:09 会话，已验证）**：标记链路（4 条 MARK 全带场景 id+名）、IMU 各流 47~50 Hz（accel 实测 117 Hz 高频上报，无碍）、步数 detector 46 步、三权限全授、通知按钮 getService 直达修复生效。**K80 无气压计**（`SENSORS_MISSING: baro` 自动降级）；室内 GNSS 48 可见 0 定位（隧道场景预演，network 35 m 兜底）；标记动作本身会留下「掏机/放下」短脉冲，分析时忽略标记后 ~2 s 过渡段。测试数据存档主机 `D:\AI\AgentChat\ZCode\tmp\metro-analysis\lab-test\`。
 - **以下为此前进度（2026-09-25 ~ 09-27 白天）**：
 
 - **已完成 S0**：目录结构 + AI 文档体系 + Gradle 骨架（仅配置，无 Kotlin 代码）。
