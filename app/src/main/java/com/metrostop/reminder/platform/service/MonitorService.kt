@@ -95,12 +95,14 @@ class MonitorService : Service() {
     private var uiTickJob: Job? = null
     private var latestVib = 0f
     private var latestH = 0f
-    private var lastOngoingMs = 0L
     private var silentMode = false
     private var settingsReady = false
     private var settingsLoadJob: Job? = null
     private val pendingIntents = mutableListOf<Intent?>()
     private var destroyed = false
+
+    /** 常驻通知「内容签名」：与上次相同则跳过 notify（UI 上报去重，2026-09-27 ui-jank-diagnosis） */
+    private var lastNotifSignature: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -311,11 +313,9 @@ class MonitorService : Service() {
         recorder?.onSample(sample, latestVib, latestH, s.state, s.stationCount)
         handleOutcome(outcome, notify = true, fromReplay = false)
 
-        // 状态栏刷新节流（1 s），避免 50 Hz 更新通知
-        if (sample.tMs - lastOngoingMs >= 1000L) {
-            lastOngoingMs = sample.tMs
-            updateOngoing()
-        }
+        // UI / 常驻通知的上报统一由 startUiTicker() 的 1 s 节拍负责（2026-09-27）：
+        // 此前这里再按 1 s 节流调一次 updateOngoing()，与 ticker 两路不同步 → 实际 1~2 Hz 全量广播，
+        // 是「监测中 UI 每秒重组」的来源之一。两路合一，避免重复上报。
     }
 
     private fun handleOutcome(outcome: TickOutcome, notify: Boolean, fromReplay: Boolean) {
@@ -345,7 +345,22 @@ class MonitorService : Service() {
             measuredHz = collector?.measuredHz ?: 0.0,
             usingLinearSensor = collector?.usingLinearAcceleration ?: true,
         )
+        // UI 状态照常写（状态来源单一；UI 侧已按字段拆分订阅，见 AppViewModel.monitorStateStable）
         SessionHolder.update(state)
+
+        // 常驻通知：内容签名未变则跳过 notify。
+        // 通知用 setUsesChronometer(true)，计时由系统渲染，无需每秒重贴；
+        // 签名只看会影响渲染的字段（站点/计数/状态/到达/录制），elapsedSec 等秒级字段不参与。
+        val signature = buildString(64) {
+            append(state.currentStation).append('|')
+            append(state.nextStation).append('|')
+            append(state.remaining).append('|')
+            append(state.totalStops).append('|')
+            append(state.state.name).append('|')
+            append(state.arrived)
+        }
+        if (signature == lastNotifSignature) return
+        lastNotifSignature = signature
         runCatching {
             androidx.core.app.NotificationManagerCompat.from(this)
                 .notify(Notifications.ID_ONGOING, notifier.buildOngoing(state))
@@ -394,6 +409,7 @@ class MonitorService : Service() {
     }
     private fun teardown(clearState: Boolean) {
         isRunning = false
+        lastNotifSignature = null // 下次会话的通知必须重新贴出（签名去重不跨会话）
         uiTickJob?.cancel()
         uiTickJob = null
         unregisterActionReceiver()

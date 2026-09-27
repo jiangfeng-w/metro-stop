@@ -14,9 +14,13 @@ import com.metrostop.reminder.platform.service.MonitorStarter
 import com.metrostop.reminder.platform.session.SessionHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -62,8 +66,35 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
     private val _logsUsage = MutableStateFlow<String?>(null)
     val logsUsage: StateFlow<String?> = _logsUsage.asStateFlow()
 
-    /** 服务写入的状态（唯一来源） */
+    /** 服务写入的状态（唯一来源，含每秒必变字段 elapsedSec/vib/h） */
     val monitorState: StateFlow<MonitorUiState> = SessionHolder.state
+
+    /**
+     * **结构性状态**：剔除每秒必变字段（`elapsedSec` / `vib` / `h` / `measuredHz`），
+     * 值相等不通知（`distinctUntilChanged`）。
+     *
+     * ⚠️ `measuredHz` 必须一起剔除：`SensorCollector` 每秒重算窗口采样率（47~50 间浮动），
+     * 若保留在结构流里，`distinctUntilChanged` 会因它每秒发射而失效（2026-09-27 实测教训）。
+     * 调试面板需要原始值，订阅 [monitorState]（仅调试 Tab 组合时）。
+     *
+     * 用途：页面结构（RouteSelector / Controls / StatusCard）只订阅本流 —— 监测中 1 Hz
+     * 全量广播不再触发整页重组（实测：整页每秒重组 17~23ms，120 Hz 下必掉帧）。
+     * 高频字段各自成流，只由真正显示的叶子组件订阅（[elapsedSecFlow]）。
+     */
+    val monitorStateStable: StateFlow<MonitorUiState> = SessionHolder.state
+        .map { it.copy(elapsedSec = 0.0, vib = 0f, h = 0f, measuredHz = 0.0) }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            SessionHolder.state.value.copy(elapsedSec = 0.0, vib = 0f, h = 0f, measuredHz = 0.0),
+        )
+
+    /** 已运行秒数（每秒变化）：只给 StatusCard 里的时间叶子订阅 */
+    val elapsedSecFlow: StateFlow<Double> = SessionHolder.state
+        .map { it.elapsedSec }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SessionHolder.state.value.elapsedSec)
 
     init {
         viewModelScope.launch {

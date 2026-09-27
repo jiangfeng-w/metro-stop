@@ -132,37 +132,45 @@ fun AppScreen(vm: AppViewModel) {
 private fun MonitorTab(vm: AppViewModel, modifier: Modifier = Modifier) {
     val repo by vm.repo.collectAsState()
     val selection by vm.selection.collectAsState()
-    val state by vm.monitorState.collectAsState()
+    // 结构性状态：剔除每秒必变字段（distinctUntilChanged）—— 监测中 1 Hz 广播不再触发整页重组
+    val state by vm.monitorStateStable.collectAsState()
+    // 下拉浮层宿主：菜单在页面顶层渲染（同窗口内覆盖，不新建 Popup 窗口）
+    val dropdownHost = remember { RouteDropdownHost() }
 
-    Column(
-        modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-    ) {
-        RouteSelector(
-            repo = repo,
-            selection = selection,
-            enabled = !state.running,
-            onSelectLine = vm::selectLine,
-            onSelectDirection = vm::selectDirection,
-            onSelectBoarding = vm::selectBoarding,
-            onSelectDestination = vm::selectDestination,
-        )
-        StatusCard(state)
-        Controls(
-            state = state,
-            canStart = vm.currentRoute() != null,
-            onStart = vm::start,
-            onStop = vm::stop,
-            onTest = vm::testAlert,
-            onCorrectUp = vm::correctUp,
-            onCorrectDown = vm::correctDown,
-        )
-        Text(
-            "注意：本 App 不用定位，靠加速度识别到站；跳站快车等情况下请以站名为准，可用 ±1 纠错。",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(12.dp),
-        )
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
+            RouteSelector(
+                repo = repo,
+                selection = selection,
+                enabled = !state.running,
+                host = dropdownHost,
+                onSelectLine = vm::selectLine,
+                onSelectDirection = vm::selectDirection,
+                onSelectBoarding = vm::selectBoarding,
+                onSelectDestination = vm::selectDestination,
+            )
+            StatusCard(state, elapsedSecFlow = vm.elapsedSecFlow)
+            Controls(
+                state = state,
+                canStart = vm.currentRoute() != null,
+                onStart = vm::start,
+                onStop = vm::stop,
+                onTest = vm::testAlert,
+                onCorrectUp = vm::correctUp,
+                onCorrectDown = vm::correctDown,
+            )
+            Text(
+                "注意：本 App 不用定位，靠加速度识别到站；跳站快车等情况下请以站名为准，可用 ±1 纠错。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(12.dp),
+            )
+        }
+        // 覆盖层：渲染在滚动内容之上，位置跟随锚点字段（滚动时同步更新）
+        RouteDropdownOverlay(dropdownHost)
     }
 }
 
