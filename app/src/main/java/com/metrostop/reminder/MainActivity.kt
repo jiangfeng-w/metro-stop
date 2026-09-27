@@ -26,9 +26,19 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_AUTO_START = "auto_start"
         const val EXTRA_START_ERROR = "start_error"
+
+        /** lab-data-collection：调试采集的临时运行时权限（采集需求下线时整段移除） */
+        val LAB_PERMISSIONS = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACTIVITY_RECOGNITION,
+            Manifest.permission.READ_PHONE_STATE,
+        )
     }
 
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /** Lab 采集权限（多权限一次请求；拒绝即降级，不影响主功能） */
+    private val labPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,7 +52,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface {
-                    AppScreen(vm)
+                    AppScreen(vm, onRequestLabPermissions = ::requestLabPermissions)
                 }
             }
         }
@@ -78,5 +88,15 @@ class MainActivity : ComponentActivity() {
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (!granted) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** 实验室采集权限请求（LabCard 的「授予权限」按钮触发；用户也可拒绝 → 对应流不采集） */
+    private fun requestLabPermissions() {
+        val missing = LAB_PERMISSIONS.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            labPermissions.launch(missing.toTypedArray())
+        }
     }
 }

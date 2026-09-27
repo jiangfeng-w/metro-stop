@@ -33,7 +33,7 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppScreen(vm: AppViewModel) {
+fun AppScreen(vm: AppViewModel, onRequestLabPermissions: () -> Unit = {}) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     val error by vm.uiError.collectAsState()
     val scope = rememberCoroutineScope()
@@ -87,6 +87,7 @@ fun AppScreen(vm: AppViewModel) {
                 csvFiles = csvFiles,
                 onCsvFilesLoaded = { csvFiles = it },
                 onShowCsvPicker = { showCsvPicker = it },
+                onRequestLabPermissions = onRequestLabPermissions,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -203,11 +204,13 @@ private fun DebugTab(
     csvFiles: List<File>,
     onCsvFilesLoaded: (List<File>) -> Unit,
     onShowCsvPicker: (Boolean) -> Unit,
+    onRequestLabPermissions: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by vm.monitorState.collectAsState()
     val debugExpanded by vm.debugExpanded.collectAsState()
     val replayReport by vm.replayReport.collectAsState()
+    val labState by vm.labState.collectAsState()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(debugExpanded) {
@@ -241,6 +244,17 @@ private fun DebugTab(
             },
             onLoadReport = vm::loadReplayReport,
             onCleanLogs = vm::cleanLogsNow,
+        )
+
+        // 实验室数据采集（lab-data-collection，短期调试需求）
+        LabCard(
+            state = labState,
+            permissionsGranted = vm.labPermissionsGranted(),
+            permissionsTotal = vm.labPermissionsTotal,
+            onGrantPermissions = onRequestLabPermissions,
+            onStart = vm::startLabCollect,
+            onStop = vm::stopLabCollect,
+            onMarkScenario = vm::markLabScenario,
         )
     }
 }

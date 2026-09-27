@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 权限清单：不含任何定位权限（硬性规则 3） -->
+    <!-- 权限清单：正式功能不含任何定位权限（硬性规则 3）。
+         下面三行是 lab-data-collection（短期调试数据采集）的临时例外，
+         仅供实验室采集旁路服务使用，主功能不申请不读取；采集需求下线时一并移除： -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -47,6 +54,17 @@
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
+        </service>
+
+        <!-- 实验室数据采集旁路服务（lab-data-collection，短期调试需求；
+             与监测服务完全独立，采集需求下线时随权限一起移除） -->
+        <service
+            android:name=".platform.lab.LabCollectorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="调试用多传感器数据采集" />
         </service>
 
         <!-- 注意：通知按钮接收器 MonitorActionReceiver **不在此声明**，

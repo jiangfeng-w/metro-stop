@@ -84,6 +84,13 @@
     <string name="tile_sub_running">监测中</string>
     <string name="tile_sub_idle">待开始</string>
 
+    <!-- 实验室数据采集（lab-data-collection，短期调试需求，下线时整段移除） -->
+    <string name="lab_notif_title">实验室数据采集</string>
+    <string name="lab_notif_text">场景切换请在 App 内对应场景旁点「标记」（已标 %1$d 次）</string>
+    <string name="lab_notif_text_scenario">已标 %1$d 次 · 当前：%2$s</string>
+    <string name="lab_action_mark">📍标记</string>
+    <string name="lab_action_stop">停止采集</string>
+
     <!-- 错误 -->
     <string name="err_missing_route">缺少路线参数</string>
     <string name="err_bad_route">路线非法：目的站必须在上车站之后</string>

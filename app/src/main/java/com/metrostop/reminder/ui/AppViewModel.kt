@@ -1,5 +1,6 @@
 package com.metrostop.reminder.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
@@ -9,6 +10,8 @@ import com.metrostop.reminder.core.model.RouteSpec
 import com.metrostop.reminder.core.route.LineRepository
 import com.metrostop.reminder.platform.data.LogsCleaner
 import com.metrostop.reminder.platform.data.SettingsStore
+import com.metrostop.reminder.platform.lab.LabHolder
+import com.metrostop.reminder.platform.lab.LabStarter
 import com.metrostop.reminder.platform.service.MonitorService
 import com.metrostop.reminder.platform.service.MonitorStarter
 import com.metrostop.reminder.platform.session.SessionHolder
@@ -254,6 +257,41 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
                 runCatching { File(logsDir(), "replay_report.txt").readText() }.getOrNull()
             }
             _replayReport.value = text ?: "暂无回放报告"
+        }
+    }
+
+    // ---------------- 实验室采集（lab-data-collection，短期调试需求） ----------------
+
+    /** 采集状态：只读 LabHolder（服务是唯一写者，与监测 SessionHolder 互不相干） */
+    val labState: StateFlow<LabHolder.State> = LabHolder.state
+
+    /** 三项运行时权限的已授权数量（LabCard 显示 + 开始按钮门槛） */
+    fun labPermissionsGranted(): Int = listOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACTIVITY_RECOGNITION,
+        Manifest.permission.READ_PHONE_STATE,
+    ).count {
+        androidx.core.content.ContextCompat.checkSelfPermission(appContext, it) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
+    val labPermissionsTotal: Int get() = 3
+
+    fun startLabCollect() {
+        LabStarter.start(appContext) { err -> _uiError.value = "采集启动失败：$err" }
+    }
+
+    fun stopLabCollect() {
+        LabStarter.action(appContext, "com.metrostop.reminder.action.LAB_STOP_COLLECT")
+    }
+
+    /**
+     * 📍 场景标记：App 内按钮（前台调用可靠）。语义 =「进入该场景」。
+     * 通知按钮（无场景）保留为兜底；服务不在时 startService 只会空转 onStartCommand 后自退，无副作用。
+     */
+    fun markLabScenario(scenarioId: String) {
+        LabStarter.mark(appContext, scenarioId) { err ->
+            _uiError.value = "标记失败：$err"
         }
     }
 

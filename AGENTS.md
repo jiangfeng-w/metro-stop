@@ -32,7 +32,24 @@
 - 中文 Conventional Commits：`feat:` / `fix:` / `docs:` / `chore:` / `refactor:`，单行概括；
 - 需要时加 body：空一行后逐条 `- ` 写「改了什么 / 为什么」。
 
-## 当前进度与交接（2026-09-25）
+## 当前进度与交接（2026-09-27 晚 · 实验室采集落地）
+
+- **🔴 2026-09-27 下午「扔垃圾」误报事故与根因分析（本轮一切工作的起点）**：用户出门扔垃圾试用，App 在「走路 → 站住 8 s」后误报「已到站」（k=1）。离线重放 17:20 会话与设备事件逐毫秒对上（触发 316.5s）。三个结构性漏洞：① `startedInMotion` 幅度判据被走路误置位（vib 1.5~4.7 ≫ 0.25）；② `still_no_brake` 无前置证据：CRUISE 静止满 8 s 直接产 `STATION_ARRIVED`，不问是否在乘车；③ k=1 预热即提醒直达用户。分析全文 + 可复现脚本在**仓库外** `D:\AI\AgentChat\ZCode\tmp\metro-analysis\FINDINGS.md`。
+- **数据裁决（重要，后续方案以此为准）**：
+  - 文档 §3.2 的**累计式**运行证据无效（误报触发时已累计 169 s）→ 必须改「**近期窗（60~120 s）+ 单段持续**」双条件；17:20 数据实测近 60 s 窗证据仅 2.6 s < 5 s 门，**拦截成功**；
+  - 陀螺仪步态门方向正确（走路 1.8~3.4 rad/s vs 静立 0.04~0.05，30 倍分离）；**周期谱判据未经验证**（真实走路 0% 检出、手摇误检 11~32%），重验证前不可上线；
+  - 三个手摇回归资产在步态门下会崩（`real_shake` / `real_journey_3stops` / `real_inmotion_start`），需分层：检测器层用例注入关门（如 `evidenceGateEnabled`）+ 合成列车信号生成器 + 真实录制作验收级；**「手摇语义等价列车运行」假设被证伪**；
+  - **全库无任何真实乘车数据**；`vibRunTh=0.25`/`vibStopTh=0.08` 按手摇标定，口袋静立噪声已 0.07~0.1 贴 0.08 → 真实车厢两阈值大概率重标；
+  - 17:20 会话收为**负回归资产**（已实测验证拦截方案）。
+- **架构决策（对用户「推倒重来以定位为主」提议的回应）**：**不推倒**。隧道内无 GNSS（主信号在核心场景消失）、`getSpeed()` 是进隧道前陈旧值、定位挡不住地下站厅同类误报，而陀螺步态门 + 证据门零权限且两类场景都覆盖；CSV 回放闭环正是本次 20 ms 级根因定位的前提。定位降级为后续可选需求（只做上车站/出站身份确认，默认关、单独授权）。**最终裁决交给明早通勤的定位采集数据**。
+- ✅ **`lab-data-collection`（实验室数据采集）已落地装机**（2026-09-27 晚，[`docs/spec/active/lab-data-collection/需求.md`](docs/spec/active/lab-data-collection/需求.md)）：**旁路调试需求**，与监测主链路零交集，分析完成后下线（含权限回收）。
+  - **数据面**：`logs/lab_<stamp>/` 独立目录 8 类流文件 —— imu（accel/lin/gyro/mag/rot 各自独立落行，**不再合并**避免陀螺相位差）、baro（含算得的 alt_m）、light+prox、loc（GPS+网络 1 Hz：lat/lon/acc/speed/bearing/alt）、gnss（卫星数/C-N₀ ≥1 s 节流）、steps（STEP_DETECTOR+counter，ACTIVITY_RECOGNITION）、cell（各制式 dbm+level，READ_PHONE_STATE）、events（COLLECT_START/SENSORS_ON/SENSORS_MISSING/LOC_START/GNSS_START/CELL_START/MARK）；
+  - **实现**：`core/lab/LabFiles.kt`（纯 Kotlin：目录/流识别 + 独立保留策略 3 次/7 天 + **meta.json 特意不叫 lab_meta.json**——否则被监测扫描器 `*_meta.json` 模式误判成 stamp="lab" 会话，LabFilesTest 回归守住）；`platform/lab/`（LabCollectorService 独立 specialUse FGS 首行 startForeground、LabRecorder 多流 Channel 写盘镜像 CsvRecorder、LabNotifications 新渠道 `lab_ongoing` **不动三定稿渠道**、LabActionReceiver 动态注册 NOT_EXPORTED、LabHolder/LabStarter、LabSensorListener 传感器注册即降级）；`ui/LabCard.kt`（调试 Tab：权限进度 + 启停 + 流/行数/标记数）；权限逐项判、拒绝即降级（事件流留 SENSORS_MISSING 证据）；
+  - **manifest 变更**：新增 ACCESS_FINE_LOCATION/COARSE + ACTIVITY_RECOGNITION + READ_PHONE_STATE 四权限 + LabCollectorService 声明——**硬性规则 3 的临时例外**，注释已注明「仅供调试采集，下线时移除」；
+  - **红线自检通过**：算法路径（core/fsm、core/feature、TuningConfig、SensorCollector、MonitorService）`git diff` **零改动**；`gradlew test` **64 项全绿**（原 54 不回退 + LabFilesTest 10 项）；`:app:assembleDebug` 通过；`adb install -r` 保留数据装机成功；App 启动零 crash；
+  - ⚠️ shell 直接 `am start-foreground-service` 拉起被 HyperOS 拒（`mAllowStart=DENIED`，与 `pm grant` 被禁同源）——**属预期**，App 内前台点按钮不受影响；UI 路径（权限弹窗 / 启停 / 📍标记）**待用户今晚自检**；
+  - **明早通勤采集清单见需求文档第八节**：出门前开采集 + 开记录 CSV + 正常开始监测（并行）→ 场景切换点按通知「📍标记」→ 走路/奔跑/扶梯站定/站台等车/乘车（坐+站+玩手机）/车厢走动/上下楼梯 → 到站停止采集 + 结束监测 → 回传说「录好了」由 AI 拉数（`MSYS_NO_PATHCONV=1`）。
+- **以下为此前进度（2026-09-25 ~ 09-27 白天）**：
 
 - **已完成 S0**：目录结构 + AI 文档体系 + Gradle 骨架（仅配置，无 Kotlin 代码）。
 - **已完成 S1**：环境（JDK 17 / SDK / Gradle 8.13 免安装 / 无线调试 / 装机）+ 首次编译通过。
