@@ -67,7 +67,8 @@
 - **已立项的新需求（2026-09-25 讨论后落档，见 `docs/README.md` 速览表）**：
   1. `gait-discrimination`（`ready`）—— 步态识别取代 `startedInMotion` 幅度判据，修「站台走路 → 多算 1 站」；零新增权限；**前置：用户补录走路 / 乘车 CSV 标定阈值**；
   2. `csv-storage-policy`（**`done`**）—— `record_csv` 默认关闭 + 保留最近 10 次 / 14 天 / 200 MB 自动清理（已验收，见下）；
-  3. `trip-history-db`（`planned`，归 M3）—— SQLite 存行程摘要与停站明细（与 CSV 解耦），最简历史列表；**开工前需定文档第四节 5 项待决策**。
+  3. `trip-history-db`（`planned`，归 M3）—— SQLite 存行程摘要与停站明细（与 CSV 解耦），最简历史列表；**开工前需定文档第四节 5 项待决策**；
+  4. `ui-jank-diagnosis`（**`in-progress`**，2026-09-27 立项）—— UI 滑动 / 下拉框互切掉帧诊断与修复；诊断报告在 `docs/spec/active/ui-jank-diagnosis/诊断报告.md`；**先取证再改**，修复涉服务 UI 上报侧需用户同意。
 - ✅ **`csv-storage-policy` 已完成并验收**（2026-09-25，暂停解除后的第一个需求）：
   - **core（纯 Kotlin）**：`core/retention/CsvRetention.kt` —— `CsvSessionScanner`（`sensor_`/`events_`/`_meta` 分组 + 缺文件容错）+ `CsvRetention.selectForDeletion`（年龄 / 次数 / 体积三规则叠加，`activeStamp` 永不删，返回最旧在前）；`TuningConfig` 新增 `retentionSessions=10` / `retentionDays=14` / `retentionMaxMb=200`；
   - **platform**：`LogsCleaner`（IO 薄壳：`scan()` 占用 / `clean()` 按策略 / `cleanAll()` 手动清空；只碰会话三件套，`replay_report.txt` 与未知文件不动）；`MonitorService.beginMonitoring` 起 IO 协程清理（**无论是否在录都跑**，`activeStamp` 传本次会话名）；
@@ -79,7 +80,13 @@
     **⚠️ 通用教训**：任何「读-判断-写」式迁移，判据里若含**用户后续会写入的键**，必须配一次性标记，否则判定会随使用而漂移。
 - **ANR 修复（2026-09-26）**：设备 ANR 堆栈确认 `MonitorService.onCreate()` 内 `preloadSettings()` 的 `runBlocking` 等待 DataStore，导致主线程卡住并延迟 `startForeground`；已改为先进入前台，再由 IO 协程加载设置。设置准备期间的服务动作会排队，停止动作会清空待执行动作。`gradlew test :app:assembleDebug` 已通过，并已通过 `adb install -r` 保留数据更新至红米 K80；用户手动复测确认开始监测不再卡死。
 - **三 Tab 首屏优化（2026-09-26）**：冷启动帧统计显示 21 帧中 10 帧错过帧期限、10 帧 UI 线程慢，GPU 99 分位 4 ms；主页已拆为「监测 / 设置 / 调试」三个底部 Tab，默认只组合监测页，各页只订阅自身所需状态。下拉框保持原始 Material3 交互。`gradlew test :app:assembleDebug` 通过并已保留数据安装；**冷启动与 Tab 交互仍待用户手动验收**。CSV 开关入口已移至底部「设置」Tab。未改算法路径、监测循环、传感器或系统级配置；通勤实测有效。
-- ⏸ **当前状态（2026-09-26）**：ANR 修复与三 Tab UI 改造均已提交、构建并保留数据安装；仍待用户手动验收冷启动与 Tab 操作，其余新需求继续等通勤实测与标定数据回传。
+- ⏸ **当前状态（2026-09-27）**：ANR 修复与三 Tab UI 改造均已提交、构建并保留数据安装；仍待用户手动验收冷启动与 Tab 操作。**`ui-jank-diagnosis`（UI 掉帧诊断 + 修复）已完成取证与 P0+P1 修复实施**（红米 K80，A/B/C 组脚本注入 + framestats 逐帧；修复经用户授权，已装机）：
+  1. **诊断结论**：① **下拉框是重活**（用户最痛点）：每次展开产生 1 个 **70~240ms** 大帧 + 数帧 16~40ms（Popup 窗口创建/首绘 + 菜单一次性组合 + 动画链），janky 27~38%；实测无「吞点」、无「双弹窗」——首版交接文档的"双窗口/吞点"推测**证伪**；② **监测中 1Hz 全量状态广播**使静止也 janky 41.7%、滑动 6.6%（未监测滑动仅 2.8%）；③ **状态域互斥双向实锤**：监测中下拉框禁用不可展开、未监测静止 0 帧——首版「每秒广播撞上下拉框展开」的串联归因**作废**。
+  2. **修复 P0（下拉框，纯 UI）**：`RouteSelector.kt` 重写为**同窗口覆盖浮层**（`RouteDropdownHost` + `RouteDropdownOverlay`：锚点定位、空间不足自动上翻、限高滚动、点另一字段**直切不吞点**、返回键关闭）+ options `remember` 稳定引用 → janky **27~38% → 0.44~0.52%**（99th 150~300ms → 36~121ms）。外观迭代 v1（自绘，丑）→ v2（原版 `OutlinedTextField` + 内联展开）→ **v3 当前（原版字段外观 + 覆盖式菜单，与 Popup 观感一致）**。**结论：掉帧是 `ExposedDropdownMenuBox` 的 Popup 窗口机制问题，与外观样式无关**（1 项与 7 项菜单展开首帧成本相同：104.9ms vs 115.4ms）。
+  3. **修复 P1（1Hz 更新）**：① UI 侧：`AppViewModel.monitorStateStable`（剔 `elapsedSec`/`vib`/`h`/**`measuredHz`** 秒变字段）+ `elapsedSecFlow` 独立成流 + 订阅下沉 + 秒表改原生 TextView（`AndroidView`，只重录自身 RenderNode）；② 服务侧（**已获用户明确同意**，仅动 UI 上报、非监测循环）：两路 1Hz 上报合一、常驻通知按内容签名去重 → 静止 41.7% → **25~30%**（残余即秒表每秒走字 1 帧，p50 16ms）、滑动 6.6% → **4.8%**。
+  4. **自检与回归**：功能回归（四级选择/互切单点即切/下游清空/监测启停）全通过；`gradlew test` **54 项全绿**；算法路径（core/fsm、core/feature、TuningConfig、SensorCollector）**零改动**；已 `adb install -r`。
+  5. 残余与后续：冷启动 38.1% 为独立首屏问题（P2，另立项）；秒表若主观仍顿挫可选降频（详见报告 §6）。**待用户主观验收「滑动/互切是否不再卡」**。
+  详见 `docs/spec/active/ui-jank-diagnosis/诊断报告.md` §5.3/§5.4/§6；诊断期副作用记录于 §9.3（多次启动监测触发保留策略，设备上 10 个旧会话被轮换出设备——**测试前已完整备份且已推回设备**；权威副本以主机 `jank-artifacts\logs-backup-*\` 三份备份为准）。其余新需求继续等通勤实测与标定数据回传。
 - 🚫 **通勤实测数据回传前的禁止事项（红线，2026-09-25 约定）**——违反任一条，通勤实测结果即作废、必须重测：
   1. **禁止改动算法路径**：`core/fsm/`、`core/feature/`、`core/model/TuningConfig.kt`（含新增 / 调整任何阈值）、`platform/sensor/SensorCollector.kt`、`MonitorService` 的监测循环；
   2. **禁止卸载 App / 清除 App 数据 / 手动删除 `logs/` 内文件**（含调试面板「立即清理日志」按钮）——会丢实测准备状态与待回传的录制数据；装机只允许 `adb install -r`；
@@ -97,9 +104,9 @@
   2. 标定数据到手后做 `gait-discrimination`；
   3. 之后进 **S3（M2）**：全部通知文案终稿 + 首次启动强引导 + `FOREGROUND_SERVICE_IMMEDIATE` 细化；`trip-history-db` 随 M3。
 - **⚠️ 通勤实测前必做**：设置里**打开「记录 CSV」**——该开关默认值已改为关（`csv-storage-policy`），不打开就录不到标定数据。
-- **本机设备当前状态**（2026-09-25 验收后）：App 数据已清空（等同新装）→ 路线已重选（示例南站 → 示范路站，k=1）、`record_csv` **未开**、`logs` 空、`record_csv_migrated` 标记已落。
-- **本机命令速查与踩坑**：见 `docs/development.md`。**注意 HyperOS 4 beta 已禁 shell 注入按键与 `pm grant`，屏幕操作必须人工**；Git Bash 下 `/sdcard/...` 要加 `MSYS_NO_PATHCONV=1`。
-- **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/<当前需求>/需求.md`（当前：`mvp-stop-counter` 收尾 + `gait-discrimination` + `trip-history-db`；`csv-storage-policy` 已 `done`）→ 需要背景时读 `docs/spec/需求与方案.md`。
+- **本机设备当前状态（2026-09-27 掉帧诊断后）**：`record_csv` **已开**（用户此前打开）、路线 demo1_up（示例南站 → 示范路站，k=1）、`record_csv_migrated` / `keepalive_guide_done` 已落；设备 `logs/` 有 10 个会话（含关键通勤录制 `20260927_172025`，另有若干条为掉帧诊断实验产物）；DataStore 未被诊断改动。**通勤实测录制数据仍在设备与多处备份中**（`jank-artifacts\logs-backup-*`）。
+- **本机命令速查与踩坑**：见 `docs/development.md`。**注意 HyperOS 4 beta 已禁 shell 注入按键与 `pm grant`**；但 **monkey 脚本通道可用于注入**（配方：`DispatchPointer` + 真实 uptime 毫秒时间戳 + 按下 `pressure=1.0` + `-p <包名>`，详见 `docs/spec/active/ui-jank-diagnosis/诊断报告.md` §9.1）；Git Bash 下 `/sdcard/...` 与 `/data/local/tmp/...` 要加 `MSYS_NO_PATHCONV=1`。
+- **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/<当前需求>/需求.md`（当前：`mvp-stop-counter` 收尾 + `gait-discrimination` + `ui-jank-diagnosis`；`csv-storage-policy` 已 `done`）→ 需要背景时读 `docs/spec/需求与方案.md`。
 - **分工**：AI 负责写代码与在本机代敲命令（会话内环境变量可能不生效，用绝对路径）；用户负责手机端操作、通勤实测与验收反馈。
 
 ## 入口
