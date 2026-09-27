@@ -13,9 +13,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -371,12 +371,11 @@ fun RouteDropdownOverlay(host: RouteDropdownHost, modifier: Modifier = Modifier)
                 .width(with(density) { width.toDp() })
                 .heightIn(max = with(density) { maxHeightPx.toDp() }),
         ) {
-            Column(
-                Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(vertical = 8.dp),
-            ) {
-                options.forEach { (optionId, name) ->
+            // LazyColumn：真实线路最长为 6 号线 56 站，一次性 forEach 组合会拖首帧；
+            // 只组合可见项（菜单本身限高 + 内部滚动）。锚点定位 / 上翻 / 限高逻辑不变。
+            LazyColumn(Modifier.padding(vertical = 8.dp)) {
+                items(options.size, key = { options[it].first }) { i ->
+                    val (optionId, name) = options[i]
                     DropdownMenuItem(
                         text = { Text(name) },
                         onClick = {
