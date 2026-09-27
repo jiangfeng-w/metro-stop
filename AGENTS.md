@@ -32,7 +32,7 @@
 - 中文 Conventional Commits：`feat:` / `fix:` / `docs:` / `chore:` / `refactor:`，单行概括；
 - 需要时加 body：空一行后逐条 `- ` 写「改了什么 / 为什么」。
 
-## 当前进度与交接（2026-09-27 晚 · 实验室采集落地）
+## 当前进度与交接（2026-09-28 凌晨 · 真实线路数据上线）
 
 - **🔴 2026-09-27 下午「扔垃圾」误报事故与根因分析（本轮一切工作的起点）**：用户出门扔垃圾试用，App 在「走路 → 站住 8 s」后误报「已到站」（k=1）。离线重放 17:20 会话与设备事件逐毫秒对上（触发 316.5s）。三个结构性漏洞：① `startedInMotion` 幅度判据被走路误置位（vib 1.5~4.7 ≫ 0.25）；② `still_no_brake` 无前置证据：CRUISE 静止满 8 s 直接产 `STATION_ARRIVED`，不问是否在乘车；③ k=1 预热即提醒直达用户。分析全文 + 可复现脚本在**仓库外** `D:\AI\AgentChat\ZCode\tmp\metro-analysis\FINDINGS.md`。
 - **数据裁决（重要，后续方案以此为准）**：
@@ -81,7 +81,7 @@
   2. **「车上中途开始」时第一个真实到站被吞**（用户反馈：「上车站→目的站只差 1 站，却要摇两次才提醒」）→ 首站忽略规则只看 `hasRun`，未区分开始姿势。新增 `TuningConfig.startMovingConfirmSec` + `StationStopDetector.startedInMotion`（预热期内振动持续 1 s 即判定「开始时已在行驶」），该姿势下首次停站直接计数；`WARMUP_DONE` note 记 `started_in_motion` / `started_at_platform`。⚠️ **该幅度判据有已知缺陷**（站台走路也会超阈值 → 多算 1 站），已立项 [`docs/spec/active/gait-discrimination`](docs/spec/active/gait-discrimination/需求.md) 用步态识别取代，届时 `startedInMotion` / `startMovingConfirmSec` 一并删除。
   3. 通知栏看不到已运行时间 → `setUsesChronometer(true)`（系统自动走动）。
   4. 磁贴状态需收起重开通知栏才刷新 → `onStartListening` 订阅 `SessionHolder`，状态翻转即 `updateTile()`。
-- **回归资产（硬性规则 2）**：`app/src/test/resources/replay/` 下有 5 个实测文件（摇动/静置、3 站行程、车上开始单站行程 + 2 份现场事件金标准），对应 `RealCsvRegressionTest` / `RealJourneyRegressionTest` / `RealInMotionStartRegressionTest`，另有纯逻辑套件 `CsvReplayTest` / `FeatureExtractorTest` / `DetectorStateMachineTest` / `RouteSpecTest` / `CsvRetentionTest`。**改阈值必跑 `gradlew test`**（当前 **54 项**）。
+- **回归资产（硬性规则 2）**：`app/src/test/resources/replay/` 下有 5 个实测文件（摇动/静置、3 站行程、车上开始单站行程 + 2 份现场事件金标准），对应 `RealCsvRegressionTest` / `RealJourneyRegressionTest` / `RealInMotionStartRegressionTest`，另有纯逻辑套件 `CsvReplayTest` / `FeatureExtractorTest` / `DetectorStateMachineTest` / `RouteSpecTest` / `CsvRetentionTest` / **`SubwayDataAssetTest`（资产线路数据回归：站数 / 关键站序 / `stopCount` 验收数字）** / `LabFilesTest`。**改阈值必跑 `gradlew test`**（当前 **79 项**）。
 - **代码已提交**（2026-09-25）：`091bd5c feat: S2(M1) 到站计数主链路实现（core/platform/ui + 回归资产）` + `2bc00ee docs: S2(M1) 实机验收记录与交接更新`。
 - **已立项的新需求（2026-09-25 讨论后落档，见 `docs/README.md` 速览表）**：
   1. `gait-discrimination`（`ready`）—— 步态识别取代 `startedInMotion` 幅度判据，修「站台走路 → 多算 1 站」；零新增权限；**前置：用户补录走路 / 乘车 CSV 标定阈值**；
@@ -99,7 +99,13 @@
     **⚠️ 通用教训**：任何「读-判断-写」式迁移，判据里若含**用户后续会写入的键**，必须配一次性标记，否则判定会随使用而漂移。
 - **ANR 修复（2026-09-26）**：设备 ANR 堆栈确认 `MonitorService.onCreate()` 内 `preloadSettings()` 的 `runBlocking` 等待 DataStore，导致主线程卡住并延迟 `startForeground`；已改为先进入前台，再由 IO 协程加载设置。设置准备期间的服务动作会排队，停止动作会清空待执行动作。`gradlew test :app:assembleDebug` 已通过，并已通过 `adb install -r` 保留数据更新至红米 K80；用户手动复测确认开始监测不再卡死。
 - **三 Tab 首屏优化（2026-09-26）**：冷启动帧统计显示 21 帧中 10 帧错过帧期限、10 帧 UI 线程慢，GPU 99 分位 4 ms；主页已拆为「监测 / 设置 / 调试」三个底部 Tab，默认只组合监测页，各页只订阅自身所需状态。下拉框保持原始 Material3 交互。`gradlew test :app:assembleDebug` 通过并已保留数据安装；**冷启动与 Tab 交互仍待用户手动验收**。CSV 开关入口已移至底部「设置」Tab。未改算法路径、监测循环、传感器或系统级配置；通勤实测有效。
-- ⏸ **当前状态（2026-09-27）**：ANR 修复与三 Tab UI 改造均已提交、构建并保留数据安装；仍待用户手动验收冷启动与 Tab 操作。**`ui-jank-diagnosis`（UI 掉帧诊断 + 修复）已完成取证与 P0+P1 修复实施**（红米 K80，A/B/C 组脚本注入 + framestats 逐帧；修复经用户授权，已装机）：
+- ⏸ **当前状态（2026-09-28 凌晨）**：ANR 修复、三 Tab UI、掉帧修复均已提交装机；**真实线路数据（成都 4/6 号线）已上线并装机**，设备上路线已重选为「6 号线 / 开往望丛祠 / 观东 → 玉双路（12 站）」，`record_csv` 已开；**明早通勤实测数据回传前，红线继续有效**：
+  1. **真实线路数据（`real-line-data`，2026-09-28 立项并完成实施）**：用户提供 OSM 全量数据（16 线 / 436 站，WGS-84，`sha256=14336535…`），本次只落 **4 号线（30 站）+ 6 号线（56 站）**；三源交叉核对（OSM / 官网线路图 2026-09-24 / 交通联合卡官方站码）；站点存在 `建设北路` vs `电子科大建设北路` 分歧，按现行权威源取**「建设北路」**；生成脚本 `docs/spec/active/real-line-data/assets/gen_lines.py`（可复跑、可扩线，`py gen_lines.py` 默认只出 4/6 号线）。**存储决策：本期保持 assets JSON**，待「线路/站点自助管理」立项时再评估迁 SQLite（已记录在需求文档第六节与总纲 §11 #1）。
+  2. **配套改动（非算法路径）**：`ui/RouteSelector.kt` 下拉菜单 `Column+forEach` → **`LazyColumn`**（56 站懒加载）；新增 `SubwayDataAssetTest`（13 项）锁定站数/端点/关键站序/`stopCount` 验收数字/id 唯一性与清洗一致；`gradlew test` **79 项全绿**（66 基线 + 13 新增）；算法路径 `git diff --stat` **零改动**。
+  3. **真机验证**：`adb install -r` 保留数据成功；从设备拉回 base.apk 内核验 assets（成都、4/6 号线站数、`12 站 / D−1=牛王庙`、`2 站 / D−1=市二医院` 全部正确）；设备上已产生一次带新数据的会话 `20260928_004455`（meta 记录 `line=6号线 / 观东 → 玉双路 / stopCount=12`）。
+  4. **⚠️ 处置说明（诚实记录）**：为验证 App 崩溃与否，本机在 00:45:14 执行过 `am force-stop`——当时用户恰在使用 App，把其正在进行的短会话以 `manual` 结束（会话文件完整、非重要数据）。**已约定：用户使用手机期间 AI 不再做 force-stop / 注入点按等扰动操作。**
+  5. **换乘需求已立项**（`transfer-route`，`planned`）：用户上下班各换乘一次（6 号线 ⇄ 4 号线，玉双路换乘）；须先定 8 项待决策；**涉算法路径，待通勤实测回传与红线解除后开工**。明天先测第一乘（单段 12 站）。
+- **UI 掉帧诊断 + 修复（`ui-jank-diagnosis`，2026-09-27）**（红米 K80，A/B/C 组脚本注入 + framestats 逐帧；修复经用户授权，已装机）：
   1. **诊断结论**：① **下拉框是重活**（用户最痛点）：每次展开产生 1 个 **70~240ms** 大帧 + 数帧 16~40ms（Popup 窗口创建/首绘 + 菜单一次性组合 + 动画链），janky 27~38%；实测无「吞点」、无「双弹窗」——首版交接文档的"双窗口/吞点"推测**证伪**；② **监测中 1Hz 全量状态广播**使静止也 janky 41.7%、滑动 6.6%（未监测滑动仅 2.8%）；③ **状态域互斥双向实锤**：监测中下拉框禁用不可展开、未监测静止 0 帧——首版「每秒广播撞上下拉框展开」的串联归因**作废**。
   2. **修复 P0（下拉框，纯 UI）**：`RouteSelector.kt` 重写为**同窗口覆盖浮层**（`RouteDropdownHost` + `RouteDropdownOverlay`：锚点定位、空间不足自动上翻、限高滚动、点另一字段**直切不吞点**、返回键关闭）+ options `remember` 稳定引用 → janky **27~38% → 0.44~0.52%**（99th 150~300ms → 36~121ms）。外观迭代 v1（自绘，丑）→ v2（原版 `OutlinedTextField` + 内联展开）→ **v3 当前（原版字段外观 + 覆盖式菜单，与 Popup 观感一致）**。**结论：掉帧是 `ExposedDropdownMenuBox` 的 Popup 窗口机制问题，与外观样式无关**（1 项与 7 项菜单展开首帧成本相同：104.9ms vs 115.4ms）。
   3. **修复 P1（1Hz 更新）**：① UI 侧：`AppViewModel.monitorStateStable`（剔 `elapsedSec`/`vib`/`h`/**`measuredHz`** 秒变字段）+ `elapsedSecFlow` 独立成流 + 订阅下沉 + 秒表改原生 TextView（`AndroidView`，只重录自身 RenderNode）；② 服务侧（**已获用户明确同意**，仅动 UI 上报、非监测循环）：两路 1Hz 上报合一、常驻通知按内容签名去重 → 静止 41.7% → **25~30%**（残余即秒表每秒走字 1 帧，p50 16ms）、滑动 6.6% → **4.8%**。
@@ -110,23 +116,26 @@
   1. **禁止改动算法路径**：`core/fsm/`、`core/feature/`、`core/model/TuningConfig.kt`（含新增 / 调整任何阈值）、`platform/sensor/SensorCollector.kt`、`MonitorService` 的监测循环；
   2. **禁止卸载 App / 清除 App 数据 / 手动删除 `logs/` 内文件**（含调试面板「立即清理日志」按钮）——会丢实测准备状态与待回传的录制数据；装机只允许 `adb install -r`；
   3. **禁止改已定稿的系统级配置**：通知渠道属性（硬规则 4）、前台服务类型 `specialUse`、包名、权限清单；
-  4. **任何改动完成后必须自检，不通过不得装机**：`git diff --stat` 确认第 1 条路径零改动 + `gradlew test` 54 项全绿。
-- **需要用户配合的通勤实测清单**（一次出行同时完成 M1 验收 + 步态标定取数 + 锁屏压测）：
-  1. 出门前：保活五步已做、通知权限已给，在底部**「设置」tab**里打开「记录 CSV」、路线选好（或直接用磁贴走上次路线）、**手机放口袋**（别拿手里 / 别外放音乐，会抬高 vib 基线）；
-  2. **关键一步：在站厅就点「开始监测」** → 走去站台 → 等车 → 上车 → 坐完整段。这样一段 CSV 里同时含「站厅走路 + 站台等待 + 真实乘车（启动/匀速/制动/停稳）」，正好供 `gait-discrimination` 标定；
-  3. 行程中记下：实际坐了几站（含目的站）、**D−1 提醒出现在第几站**、从停稳到响提醒大约多久、有没有误报/漏报；期间手机锁屏放着即可（顺带完成 10 min 50 Hz 压测）；
-  4. 到站后确认：App 计数是否 = 实际站数、常驻通知是否已自动消失；
-  5. 回传：说一句「录好了」由 AI 用 `adb pull` 取数（Git Bash 需 `MSYS_NO_PATHCONV=1`），或自行导出；
-  6. 若中途服务被杀 / 无提醒 → 记下大致时间点，便于对着 CSV 定位。
+  4. **任何改动完成后必须自检，不通过不得装机**：`git diff --stat` 确认第 1 条路径零改动 + `gradlew test` **79 项**全绿。
+- **需要用户配合的通勤实测清单**（一次出行同时完成 M1 验收 + 步态标定取数 + 锁屏压测；**2026-09-28 早版本**）：
+  1. 出门前确认：保活五步已做、通知权限已给、**「记录 CSV」已开**（设备已确认开启）、**手机放口袋**（别拿手里 / 别外放音乐，会抬高 vib 基线）；
+  2. **路线已选好**：6 号线 / 开往望丛祠 方向 / 观东 → 玉双路（**12 站**，D−1 应在**牛王庙**）——也可直接用磁贴走上次路线；
+  3. **关键一步：在站厅就点「开始监测」** → 走去站台 → 等车 → 上车 → 坐完整段（12 站到玉双路）。这样一段 CSV 里同时含「站厅走路 + 站台等待 + 真实乘车（启动/匀速/制动/停稳）」，正好供 `gait-discrimination` 标定；
+  4. 行程中记下：实际坐了几站（含目的站）、**D−1 提醒出现在第几站**、从停稳到响提醒大约多久、有没有误报/漏报；期间手机锁屏放着即可（顺带完成 10 min 50 Hz 压测）；
+  5. 到站后确认：App 计数是否 = 实际站数（**12**）、常驻通知是否已自动消失；
+  6. **如当天测第二乘（4 号线 玉双路 → 太升南路，2 站）**：到玉双路后先**结束监测** → 在 App 内把路线改为「4 号线 / 开往万盛 / 玉双路 → 太升南路」→ 再点开始（换乘功能尚未实现，此为手动换乘；`transfer-route` 已立项待做）；
+  7. 回传：说一句「录好了」由 AI 用 `adb pull` 取数（Git Bash 需 `MSYS_NO_PATHCONV=1`），或自行导出；
+  8. 若中途服务被杀 / 无提醒 → 记下大致时间点，便于对着 CSV 定位。
 - **再下一步**：
-  1. 用户下次通勤做**真实线路实测**（≥5 站），**顺带录标定数据**（站厅→站台走路 2 min；真实乘车一段含启动/匀速/制动/停稳），把 CSV 导出 → 回放比对 → 结果填 `需求与方案.md` 第十节验收表；
-  2. 标定数据到手后做 `gait-discrimination`；
-  3. 之后进 **S3（M2）**：全部通知文案终稿 + 首次启动强引导 + `FOREGROUND_SERVICE_IMMEDIATE` 细化；`trip-history-db` 随 M3。
-- **⚠️ 通勤实测前必做**：设置里**打开「记录 CSV」**——该开关默认值已改为关（`csv-storage-policy`），不打开就录不到标定数据。
-- **本机设备当前状态（2026-09-27 掉帧诊断后）**：`record_csv` **已开**（用户此前打开）、路线 demo1_up（示例南站 → 示范路站，k=1）、`record_csv_migrated` / `keepalive_guide_done` 已落；设备 `logs/` 有 10 个会话（含关键通勤录制 `20260927_172025`，另有若干条为掉帧诊断实验产物）；DataStore 未被诊断改动。**通勤实测录制数据仍在设备与多处备份中**（`jank-artifacts\logs-backup-*`）。
+  1. **2026-09-28 早通勤实测**：6 号线 观东 → 玉双路（12 站）→ 填 `需求与方案.md` 第十节验收表；判定 S5（真实线路）达成；
+  2. 数据回传后做 `gait-discrimination`（步态标定）；
+  3. 定 `transfer-route` 8 项待决策 → 换乘实现；
+  4. 之后进 **S3（M2）**：全部通知文案终稿 + 首次启动强引导 + `FOREGROUND_SERVICE_IMMEDIATE` 细化；`trip-history-db` 随 M3。
+- **⚠️ 通勤实测前必做**：设置里**打开「记录 CSV」**——该开关默认值已改为关（`csv-storage-policy`），不打开就录不到标定数据。**设备当前状态：已开**（DataStore 实测 `record_csv=08 01`）。
+- **本机设备当前状态（2026-09-28 凌晨，真实线路数据装机后）**：`record_csv` **已开**、路线已重选为 **`cd6` / `cd6_to_wangcongzi` / `cd6_s38`（观东）→ `cd6_s26`（玉双路）**、`record_csv_migrated` / `keepalive_guide_done` / `debug_expanded` 已落；设备 `logs/` 有 10 个会话 + 3 个 lab 目录。**旧路线 `demo1` 已作废**（数据替换后不可用，属预期行为）；**旧示例线路会话无法在 App 内回放**（Asset 换了），主机 `jank-artifacts\logs-backup-*\` 三份备份不受影响。
 - **本机命令速查与踩坑**：见 `docs/development.md`。**注意 HyperOS 4 beta 已禁 shell 注入按键与 `pm grant`**；但 **monkey 脚本通道可用于注入**（配方：`DispatchPointer` + 真实 uptime 毫秒时间戳 + 按下 `pressure=1.0` + `-p <包名>`，详见 `docs/spec/active/ui-jank-diagnosis/诊断报告.md` §9.1）；Git Bash 下 `/sdcard/...` 与 `/data/local/tmp/...` 要加 `MSYS_NO_PATHCONV=1`。
-- **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/<当前需求>/需求.md`（当前：`mvp-stop-counter` 收尾 + `gait-discrimination` + `ui-jank-diagnosis`；`csv-storage-policy` 已 `done`）→ 需要背景时读 `docs/spec/需求与方案.md`。
-- **分工**：AI 负责写代码与在本机代敲命令（会话内环境变量可能不生效，用绝对路径）；用户负责手机端操作、通勤实测与验收反馈。
+- **接手阅读顺序**：本文件 → `docs/README.md`（需求速览 + 自举环境 + 下一步）→ `docs/spec/active/<当前需求>/需求.md`（当前：`real-line-data`（要通勤实测）+ `transfer-route`（planned）+ `lab-data-collection` + `mvp-stop-counter` 收尾 + `gait-discrimination` + `ui-jank-diagnosis`）→ 需要背景时读 `docs/spec/需求与方案.md`。
+- **分工**：AI 负责写代码与在本机代敲命令（会话内环境变量可能不生效，用绝对路径）；用户负责手机端操作、通勤实测与验收反馈。**用户使用手机期间，AI 不做 force-stop / 注入点按等扰动操作**。
 
 ## 入口
 
