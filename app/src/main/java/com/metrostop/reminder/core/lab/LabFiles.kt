@@ -32,8 +32,11 @@ object LabFiles {
     const val CSV_PREFIX = "lab_"
     const val CSV_SUFFIX = ".csv"
 
-    /** 采集流名（= 文件名 `lab_<stream>.csv`） */
-    val STREAMS = listOf("imu", "baro", "light", "loc", "gnss", "steps", "cell", "events")
+    /**
+     * 采集流名（= 文件名 `lab_<stream>.csv`）。
+     * `wifi` / `cellid` 为 cellular-wifi-fingerprint-validate 需求新增（BSSID 哈希快照 + 小区切换序列）。
+     */
+    val STREAMS = listOf("imu", "baro", "light", "loc", "gnss", "steps", "cell", "wifi", "cellid", "events")
 
     /** `lab_20260928_073000` → `20260928_073000`；不匹配返回 null */
     fun stampOfDir(dirName: String): String? = when {

@@ -1,0 +1,155 @@
+package com.metrostop.reminder.platform.lab
+
+import android.content.Context
+import android.os.Build
+import android.os.SystemClock
+import android.telephony.CellIdentityNr
+import android.telephony.CellInfo
+import android.telephony.CellInfoCdma
+import android.telephony.CellInfoGsm
+import android.telephony.CellInfoLte
+import android.telephony.CellInfoNr
+import android.telephony.CellInfoTdscdma
+import android.telephony.CellInfoWcdma
+import android.telephony.PhoneStateListener
+import android.telephony.TelephonyManager
+
+/**
+ * lab 采集的蜂窝小区序列流（cellular-wifi-fingerprint-validate，**旁路工具，与监测主链路零交集**）：
+ *
+ * - 数据源：[TelephonyManager.listen] `LISTEN_CELL_INFO` 回调 + 启动时 [TelephonyManager.getAllCellInfo]
+ *   首拍；**1 Hz 节流 + 变化即写**——小区集合签名变化立即落行（切换不落节流窗），否则 1 Hz 快照（需求 3.1）；
+ * - 行格式：`t_ms,utc_ms,cells`，cells = `pci:ci:rssi` 多值 `|` 分隔、**主服务（registered）排首**；
+ *   制式差异归一为 [CellSnapshot]（LTE/NR 取 pci/ci，WCDMA/TDSCDMA 取 psc/cid，GSM/CDMA 无 pci 填 −1），
+ *   rssi 列取该小区 `dbm`（与既有 `cell` 流口径一致）；
+ * - 隐私（需求 3.3）：CI/PCI 是运营商网络标识，可直接落盘；
+ * - 权限：`READ_PHONE_STATE`（lab 权限矩阵 hasPhone，与既有 `cell` 流同门）。
+ */
+class LabCellCollector(
+    context: Context,
+    private val write: (stream: String, row: String) -> Unit,
+    private val writeEvent: (type: String, detail: String) -> Unit,
+) {
+
+    private val appContext = context.applicationContext
+    private var telephony: TelephonyManager? = null
+    private var listener: PhoneStateListener? = null
+
+    private var lastRowElapsedMs = 0L
+    private var lastSignature: String? = null
+
+    /** 注册 CellInfo 监听并落首拍；失败返回 false（调用方从 activeStreams 移除 cellid） */
+    @Suppress("DEPRECATION")
+    fun start(): Boolean {
+        val tm = appContext.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: run {
+            writeEvent("CELLID_START", "no_telephony_service")
+            return false
+        }
+        telephony = tm
+        val l = object : PhoneStateListener() {
+            override fun onCellInfoChanged(cellInfo: MutableList<CellInfo>?) {
+                onCells(cellInfo ?: emptyList())
+            }
+        }
+        listener = l
+        val ok = runCatching { tm.listen(l, PhoneStateListener.LISTEN_CELL_INFO) }.isSuccess
+        if (!ok) {
+            writeEvent("CELLID_START", "listen_failed")
+            listener = null
+            telephony = null
+            return false
+        }
+        writeEvent("CELLID_START", "cell_info_listener")
+        onCells(runCatching { tm.allCellInfo }.getOrNull().orEmpty())
+        return true
+    }
+
+    fun stop() {
+        val tm = telephony
+        val l = listener
+        if (tm != null && l != null) {
+            runCatching { tm.listen(l, PhoneStateListener.LISTEN_NONE) }
+        }
+        telephony = null
+        listener = null
+    }
+
+    private fun onCells(cells: List<CellInfo>) {
+        val snaps = sortedCells(parseCells(cells))
+        val signature = cellsSignature(snaps)
+        val now = SystemClock.elapsedRealtime()
+        // 变化即写（切换不落节流窗）；签名不变才走 1 Hz 节流
+        if (!shouldWrite(now, lastRowElapsedMs, signature, lastSignature)) return
+        lastSignature = signature
+        lastRowElapsedMs = now
+        write("cellid", "$now,${System.currentTimeMillis()},${formatCells(snaps)}")
+    }
+
+    /** 单个小区的归一化快照（未知值一律 −1） */
+    data class CellSnapshot(val pci: Int, val ci: Long, val rssi: Int, val registered: Boolean)
+
+    companion object {
+        private const val UNKNOWN = -1
+
+        /** 写行决策（纯函数可测）：签名变化 → 立即写；否则距上次 ≥ 1 s 才写 */
+        fun shouldWrite(
+            nowMs: Long,
+            lastWriteMs: Long,
+            signature: String,
+            lastSignature: String?,
+            minIntervalMs: Long = 1000L,
+        ): Boolean = signature != lastSignature || nowMs - lastWriteMs >= minIntervalMs
+
+        /** 主服务小区排首（稳定排序：同 registered 状态保持系统给的顺序） */
+        fun sortedCells(snaps: List<CellSnapshot>): List<CellSnapshot> =
+            snaps.sortedByDescending { it.registered }
+
+        /** cells 列拼装：`pci:ci:rssi` 多值 `|` 分隔 */
+        fun formatCells(snaps: List<CellSnapshot>): String =
+            snaps.joinToString("|") { "${it.pci}:${it.ci}:${it.rssi}" }
+
+        fun cellsSignature(snaps: List<CellSnapshot>): String = formatCells(snaps)
+
+        /** 各制式 CellInfo → 快照；无法识别的制式返回 null（落事件由调用方兜底） */
+        fun parseCells(cells: List<CellInfo>): List<CellSnapshot> = cells.mapNotNull { info ->
+            val dbm = runCatching { info.cellSignalStrength.dbm }
+                .getOrNull()
+                ?.takeUnless { it == Int.MAX_VALUE }
+                ?: UNKNOWN
+            val snap = when (info) {
+                is CellInfoLte -> CellSnapshot(
+                    idOrUnknown(info.cellIdentity.pci), ciOrUnknown(info.cellIdentity.ci.toLong()),
+                    dbm, info.isRegistered,
+                )
+                is CellInfoWcdma -> CellSnapshot(
+                    idOrUnknown(info.cellIdentity.psc), ciOrUnknown(info.cellIdentity.cid.toLong()),
+                    dbm, info.isRegistered,
+                )
+                is CellInfoTdscdma -> CellSnapshot(
+                    idOrUnknown(info.cellIdentity.cpid), ciOrUnknown(info.cellIdentity.cid.toLong()),
+                    dbm, info.isRegistered,
+                )
+                is CellInfoGsm -> CellSnapshot(
+                    UNKNOWN, ciOrUnknown(info.cellIdentity.cid.toLong()), dbm, info.isRegistered,
+                )
+                is CellInfoCdma -> CellSnapshot(
+                    UNKNOWN, ciOrUnknown(info.cellIdentity.basestationId.toLong()), dbm, info.isRegistered,
+                )
+                else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) parseNr(info, dbm) else null
+            }
+            snap
+        }
+
+        private fun parseNr(info: CellInfo, dbm: Int): CellSnapshot? {
+            val nr = info as? CellInfoNr ?: return null
+            val id = nr.cellIdentity as? CellIdentityNr ?: return null
+            return CellSnapshot(
+                idOrUnknown(id.pci), ciOrUnknown(id.nci), dbm, nr.isRegistered,
+            )
+        }
+
+        private fun idOrUnknown(v: Int): Int = if (v == Int.MAX_VALUE) UNKNOWN else v
+
+        private fun ciOrUnknown(v: Long): Long = if (v == Long.MAX_VALUE) UNKNOWN.toLong() else v
+    }
+}

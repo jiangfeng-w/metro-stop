@@ -59,9 +59,9 @@ class LabFilesTest {
 
     @Test
     fun `流清单齐全`() {
-        // 需求第五节的数据面：8 类流文件
+        // lab-data-collection 第五节 8 类流 + cellular-wifi-fingerprint-validate 新增 wifi/cellid 两流
         assertEquals(
-            listOf("imu", "baro", "light", "loc", "gnss", "steps", "cell", "events"),
+            listOf("imu", "baro", "light", "loc", "gnss", "steps", "cell", "wifi", "cellid", "events"),
             LabFiles.STREAMS,
         )
     }

@@ -27,12 +27,17 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_AUTO_START = "auto_start"
         const val EXTRA_START_ERROR = "start_error"
 
-        /** lab-data-collection：调试采集的临时运行时权限（采集需求下线时整段移除） */
-        val LAB_PERMISSIONS = arrayOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACTIVITY_RECOGNITION,
-            Manifest.permission.READ_PHONE_STATE,
-        )
+        /** lab-data-collection：调试采集的临时运行时权限（采集需求下线时整段移除）。
+         *  NEARBY_WIFI_DEVICES 仅 API 33+ 存在（Wi-Fi 指纹流，cellular-wifi-fingerprint-validate）；
+         *  更低版本系统上 Wi-Fi 扫描走定位权限（清单里本就有 ACCESS_FINE_LOCATION）。 */
+        val LAB_PERMISSIONS: Array<String> = buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACTIVITY_RECOGNITION)
+            add(Manifest.permission.READ_PHONE_STATE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.NEARBY_WIFI_DEVICES)
+            }
+        }.toTypedArray()
     }
 
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }

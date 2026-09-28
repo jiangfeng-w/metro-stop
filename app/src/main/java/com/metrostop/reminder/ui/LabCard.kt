@@ -51,7 +51,7 @@ fun LabCard(
 
             if (!state.running) {
                 Text(
-                    "为步态标定 / 阈值重标 / 定位可用性分析采集全量数据：IMU、气压、光照、步数、定位、GNSS、蜂窝信号。数据仅存本机 logs/lab_* 目录。",
+                    "为步态标定 / 阈值重标 / 指纹假设裁决采集全量数据：IMU、气压、光照、步数、定位、GNSS、蜂窝信号、Wi-Fi 指纹（BSSID 哈希）、小区序列。数据仅存本机 logs/lab_* 目录。",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,7 +66,7 @@ fun LabCard(
                 }
                 if (permissionsGranted < permissionsTotal) {
                     Text(
-                        "⚠ 定位 / 身体活动 / 电话状态未全授，未授权的流不采集（其余照常）。",
+                        "⚠ 定位 / 身体活动 / 电话状态 / Wi-Fi 附近设备未全授，未授权的流不采集（其余照常）。",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )

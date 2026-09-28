@@ -68,6 +68,8 @@ class LabCollectorService : Service() {
     private var telephony: TelephonyManager? = null
     private var phoneListener: PhoneStateListener? = null
     private var lastGnssRowMs = 0L
+    private var wifiCollector: LabWifiCollector? = null
+    private var cellCollector: LabCellCollector? = null
 
     /** 📍 标记次数（通知文案用） */
     private var marks = 0
@@ -146,6 +148,13 @@ class LabCollectorService : Service() {
             hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
         val hasActivity = hasPermission(Manifest.permission.ACTIVITY_RECOGNITION)
         val hasPhone = hasPermission(Manifest.permission.READ_PHONE_STATE)
+        // Wi-Fi 指纹流：API 33+ 需 NEARBY_WIFI_DEVICES（neverForLocation，不做定位用途）；
+        // 更低版本系统要求定位权限（manifest 声明照旧，语义仍「仅指纹不定位」）
+        val hasWifiScan = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            hasPermission(Manifest.permission.NEARBY_WIFI_DEVICES)
+        } else {
+            hasLoc
+        }
 
         // 想开的传感器流（无需权限的永远在）
         val wantedSensors = buildList {
@@ -156,7 +165,8 @@ class LabCollectorService : Service() {
             add("imu"); add("baro"); add("light"); add("events")
             if (hasActivity) add("steps")
             if (hasLoc) { add("loc"); add("gnss") }
-            if (hasPhone) add("cell")
+            if (hasPhone) { add("cell"); add("cellid") }
+            if (hasWifiScan) add("wifi")
         }
 
         val headers = mapOf(
@@ -167,13 +177,15 @@ class LabCollectorService : Service() {
             "gnss" to "t_ms,utc_ms,sat_total,sat_used,cn0_mean,cn0_max",
             "steps" to "t_ms,utc_ms,detector,counter_total",
             "cell" to "t_ms,utc_ms,dbm,level",
+            "wifi" to "t_ms,utc_ms,ap_count,direct_count,bssid_hash_list",
+            "cellid" to "t_ms,utc_ms,cells",
             "events" to "t_ms,utc_ms,type,detail",
         )
 
         activeStreams = wantedFlows.toMutableList()
         val rec = LabRecorder(this, stamp)
         rec.start(headers)
-        rec.writeEvent("COLLECT_START", "wanted_flows=${wantedFlows.joinToString("|")};permission_loc=$hasLoc,activity=$hasActivity,phone=$hasPhone")
+        rec.writeEvent("COLLECT_START", "wanted_flows=${wantedFlows.joinToString("|")};permission_loc=$hasLoc,activity=$hasActivity,phone=$hasPhone,wifi=$hasWifiScan")
         recorder = rec
 
         // 独立保留策略清理（IO 线程；activeStamp 保护本次）
@@ -206,8 +218,13 @@ class LabCollectorService : Service() {
 
         // ---- 定位 ----
         if (hasLoc) startLocation()
-        // ---- 蜂窝 ----
-        if (hasPhone) startCell()
+        // ---- 蜂窝（信号强度 + 小区序列）----
+        if (hasPhone) {
+            startCell()
+            startCellId()
+        }
+        // ---- Wi-Fi 指纹 ----
+        if (hasWifiScan) startWifi()
 
         // ---- 前台服务配套 ----
         wakeLock.acquire(timeoutMs = 4L * 3600_000L) // 采集上限 4 小时
@@ -225,6 +242,8 @@ class LabCollectorService : Service() {
         sensorListener.stop()
         stopLocation()
         stopCell()
+        stopCellId()
+        stopWifi()
         wakeLock.release()
         val rec = recorder
         recorder = null
@@ -379,6 +398,44 @@ class LabCollectorService : Service() {
         }
         telephony = null
         phoneListener = null
+    }
+
+    // ---- Wi-Fi 指纹 / 小区序列两流（cellular-wifi-fingerprint-validate）----
+
+    private fun startWifi() {
+        val c = LabWifiCollector(
+            this,
+            { stream, row -> recorder?.write(stream, row) },
+            { type, detail -> recorder?.writeEvent(type, detail) },
+        )
+        wifiCollector = c
+        if (!c.start()) {
+            wifiCollector = null
+            activeStreams = activeStreams - "wifi" // 降级证据照实反映到 UI 状态
+        }
+    }
+
+    private fun stopWifi() {
+        wifiCollector?.stop()
+        wifiCollector = null
+    }
+
+    private fun startCellId() {
+        val c = LabCellCollector(
+            this,
+            { stream, row -> recorder?.write(stream, row) },
+            { type, detail -> recorder?.writeEvent(type, detail) },
+        )
+        cellCollector = c
+        if (!c.start()) {
+            cellCollector = null
+            activeStreams = activeStreams - "cellid"
+        }
+    }
+
+    private fun stopCellId() {
+        cellCollector?.stop()
+        cellCollector = null
     }
 
     // ---------------------------------------------------------------- 杂项

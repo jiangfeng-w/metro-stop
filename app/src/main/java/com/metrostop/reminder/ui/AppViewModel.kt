@@ -1,6 +1,5 @@
 package com.metrostop.reminder.ui
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
@@ -265,17 +264,13 @@ class AppViewModel(private val appContext: Context) : ViewModel() {
     /** 采集状态：只读 LabHolder（服务是唯一写者，与监测 SessionHolder 互不相干） */
     val labState: StateFlow<LabHolder.State> = LabHolder.state
 
-    /** 三项运行时权限的已授权数量（LabCard 显示 + 开始按钮门槛） */
-    fun labPermissionsGranted(): Int = listOf(
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACTIVITY_RECOGNITION,
-        Manifest.permission.READ_PHONE_STATE,
-    ).count {
+    /** lab 采集运行时权限（清单唯一来源 `MainActivity.LAB_PERMISSIONS`）的已授权数量 */
+    fun labPermissionsGranted(): Int = com.metrostop.reminder.MainActivity.LAB_PERMISSIONS.count {
         androidx.core.content.ContextCompat.checkSelfPermission(appContext, it) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
-    val labPermissionsTotal: Int get() = 3
+    val labPermissionsTotal: Int get() = com.metrostop.reminder.MainActivity.LAB_PERMISSIONS.size
 
     fun startLabCollect() {
         LabStarter.start(appContext) { err -> _uiError.value = "采集启动失败：$err" }
