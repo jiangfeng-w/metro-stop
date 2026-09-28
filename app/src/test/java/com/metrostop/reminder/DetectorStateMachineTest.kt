@@ -18,10 +18,15 @@ import org.junit.Test
 /**
  * 状态机 + 会话的合成信号测试：直接注入 Features（跳过滤波器），
  * 精确控制「行驶 / 制动 / 停稳 / 起步」序列，验证计数、提醒、纠错与边界。
+ *
+ * 本类合成信号 vib=0.3/0.6（超真实乘车证据带上限 0.35）或 0.02（低于下限），
+ * 锁的是**状态机语义**，故默认注入关闭乘车证据门；证据门自身的行为见类末尾 gate-ON 用例
+ * 与 [RealCommuteRegressionTest]。
  */
 class DetectorStateMachineTest {
 
-    private val config = TuningConfig.Default
+    private val config = TuningConfig(evidenceGateEnabled = false)
+    private val gateOnConfig = TuningConfig(evidenceGateEnabled = true)
 
     private fun route(k: Int): RouteSpec {
         val stations = (0..k).map { Station(id = "s$it", name = "站$it") }
@@ -341,5 +346,80 @@ class DetectorStateMachineTest {
         // 再纠错不会重复发坐过站
         val again = session.correctUp(clock.ms).events.map { it.type }
         assertFalse("坐过站提醒只发一次", again.contains(DetectorEventType.OVERSHOOT))
+    }
+
+    // ---------- 乘车证据门（v2, gate-ON）----------
+
+    @Test
+    fun `证据门_纠错到k减1与k补发提醒`() {
+        // 2026-09-28 早高峰缺口：纠错到 k−1 / k 时用户收不到任何提醒。
+        // 修复后：纠错语义与自动到站一致。
+        val session = MonitorSession(route(2), config)
+        val clock = Clock()
+        session.start(clock.ms)
+        warmUp(session, clock)
+
+        val r1 = session.correctUp(clock.ms) // n = 1 = k−1
+        assertTrue("纠错到 k−1 应发 D−1 提醒", r1.events.map { it.type }.contains(DetectorEventType.ALERT_PREV))
+
+        val r2 = session.correctUp(clock.ms) // n = 2 = k
+        val types2 = r2.events.map { it.type }
+        assertTrue("纠错到 k 应发到达提醒", types2.contains(DetectorEventType.ALERT_ARRIVED))
+        assertTrue("纠错到 k 应排定自动结束", r2.scheduledEndAtMs != null)
+    }
+
+    @Test
+    fun `证据门_纠错更新间隔锚点_短间隔自动到站仍被拦`() {
+        // 纠错代表一次真实到站：lastCountedMs 应随之更新，
+        // 否则纠错后 ≥60 s 的真实到站可能因旧锚点被间隔门槛误拦（或过旧锚点被放过）。
+        val session = MonitorSession(route(3), config)
+        val clock = Clock()
+        session.start(clock.ms)
+        warmUp(session, clock)
+
+        var r = stopOnce(session, clock.ms, clock) // 首站忽略
+        var t = cruise(session, r.endMs, 70.0, clock)
+        r = stopOnce(session, t, clock) // n = 1
+        assertEquals(1, session.stationCount)
+
+        // 纠错 +1（n = 2 = k−1）后，仅巡航 30 s（< 60 s 门槛）→ 应被拦为 STOP_SUSPECT
+        session.correctUp(clock.ms)
+        t = cruise(session, r.endMs, 30.0, clock)
+        val r3 = stopOnce(session, t, clock)
+        assertTrue("纠错后间隔不足仍应记 STOP_SUSPECT", r3.types.contains(DetectorEventType.STOP_SUSPECT))
+        assertEquals("疑似站不应计数", 2, session.stationCount)
+    }
+
+    @Test
+    fun `证据门_站台静立被拦截_不进入停站流程`() {
+        // 2026-09-28 早高峰真实场景：站台上开始监测后静立等车，v1 在 8 s 后误判「到站」。
+        // 证据门应拦截（无乘车证据），状态保持 CRUISE，期间可重复尝试。
+        val session = MonitorSession(route(3), gateOnConfig)
+        val clock = Clock()
+        session.start(clock.ms)
+        warmUp(session, clock)
+
+        val r = stopOnce(session, clock.ms, clock)
+        assertEquals("站台静立不应计数", 0, session.stationCount)
+        assertTrue("应产生 EVIDENCE_BLOCKED", r.types.contains(DetectorEventType.EVIDENCE_BLOCKED))
+        assertEquals("被拦截后应保持巡航（不进入停站流程）", DetectorState.CRUISE, session.state)
+    }
+
+    @Test
+    fun `证据门_拦截后出现乘车证据即恢复计数`() {
+        // 站台静立（拦截）→ 上车巡航（带内证据 ≥ 30 s）→ 第一次真实停站应计数并触发 D−1
+        val session = MonitorSession(route(2), gateOnConfig)
+        val clock = Clock()
+        session.start(clock.ms)
+        warmUp(session, clock)
+
+        val r1 = stopOnce(session, clock.ms, clock) // 站台静立：拦截
+        assertEquals("站台静立不应计数", 0, session.stationCount)
+
+        // 巡航 40 s：0.3 ∈ [0.10, 0.35]，加上制动段 vib 0.3，带内连续 ≥ 30 s → 证据成立
+        val t = cruise(session, r1.endMs, 40.0, clock)
+        val r2 = stopOnce(session, t, clock)
+        assertEquals("巡航证据成立后第一次停站应计数", 1, session.stationCount)
+        assertTrue("n=1=k−1 应发 D−1 提醒", r2.types.contains(DetectorEventType.ALERT_PREV))
     }
 }

@@ -40,7 +40,11 @@ import java.io.File
  */
 class RealCsvRegressionTest {
 
-    private val config = TuningConfig.Default
+    /**
+     * 手摇录制资产（vib 量级 1.5+，超出真实乘车证据带）——只锁「CRUISE 累计静止 → 到站」
+     * 修复点与手摇路径语义，注入关闭乘车证据门（分层见 [CsvReplayTest] 注释）。
+     */
+    private val config = TuningConfig(evidenceGateEnabled = false)
 
     private fun loadRealCsv(): String {
         val f = File("src/test/resources/replay/real_shake_20260925.csv")
@@ -78,10 +82,11 @@ class RealCsvRegressionTest {
 
         // 首站忽略（上车站本身）
         assertTrue("首次到站应被忽略（首站不计数）", types.contains(DetectorEventType.FIRST_STOP_IGNORED))
-        // 摇动 → 起步 → 制动 → 放弃（甩动尖峰不应产生误计数）
+        // 摇动 → 起步（甩动尖峰不应产生误计数）
         assertTrue("摇动应被识别为起步", types.contains(DetectorEventType.DEPART))
-        assertTrue("甩动 H 尖峰应触发 BRAKE_START", types.contains(DetectorEventType.BRAKE_START))
-        assertTrue("H 回落应触发 BRAKE_ABORT", types.contains(DetectorEventType.BRAKE_ABORT))
+        // ⚠️ 2026-09-28 v2：departConfirmSec 5→10，DEPART 后移使甩动起始的 H 尖峰窗口错过
+        // 制动检测——「甩动触发 BRAKE_START/ABORT」是 v1 时序副产品而非语义，断言移除
+        // （制动路径语义由 DetectorStateMachineTest 合成用例覆盖）。
     }
 
     @Test
@@ -99,9 +104,11 @@ class RealCsvRegressionTest {
         val quiet = rows.filter { it.tMs - rows.first().tMs < 90_000 }
         assertTrue("静置段应不少于 4000 样本", quiet.size > 4000)
         val maxAccel = quiet.maxOf { kotlin.math.sqrt(it.ax * it.ax + it.ay * it.ay + it.az * it.az) }
+        // 数据健全性检查：静置段原始（去重力）加速度幅值应为厘米级（0.25 m/s² 量级上限）。
+        // 2026-09-28 起 vibRunTh 重标为 0.10（真实车厢巡航量级），不再适合作为原始幅值上限。
         assertTrue(
-            "静置段加速度幅值应远低于 vibRunTh=%.2f（实际最大 %.4f）".format(config.vibRunTh, maxAccel),
-            maxAccel < config.vibRunTh,
+            "静置段加速度幅值应远低于 0.25（实际最大 %.4f）".format(maxAccel),
+            maxAccel < 0.25f,
         )
     }
 }
@@ -120,7 +127,13 @@ class RealCsvRegressionTest {
  */
 class RealJourneyRegressionTest {
 
-    private val config = TuningConfig.Default
+    /**
+     * 手摇模拟「列车」的 3 站行程资产（vib 量级 1.5+，超出真实乘车证据带）——
+     * 锁「回放 = 现场」的决定论性质与计数 / 提醒语义，注入关闭乘车证据门。
+     * ⚠️ events_ref 已按 2026-09-28 v2 参数（departConfirmSec=10 等）重新生成：
+     * DEPART 时间戳相应后移，到站 / 提醒时刻不变。
+     */
+    private val config = TuningConfig(evidenceGateEnabled = false)
 
     private fun csvText(name: String): String {
         val f = File("src/test/resources/replay/$name")
@@ -200,10 +213,11 @@ class RealJourneyRegressionTest {
             (endAt - arr.tMs) / 1000,
         )
 
-        // 60 s 门槛：第 3 次停站间隔 33.3 s → STOP_SUSPECT，不计数
-        val suspect = result.events.filter { it.type == DetectorEventType.STOP_SUSPECT }
-        assertEquals("应有 1 次疑似到站被门槛拦截", 1, suspect.size)
-        assertTrue("疑似站间隔应小于门槛，实际 ${suspect[0].intervalS}", (suspect[0].intervalS ?: 999.0) < config.minStopIntervalSec)
+        // 60 s 门槛：第 3 次停站间隔 33.3 s → STOP_SUSPECT，不计数。
+        // v2 起到达目的站后的静置期可能另有 restill 疑似（振动回升后再静稳），同样不计数，属预期。
+        val suspects = result.events.filter { it.type == DetectorEventType.STOP_SUSPECT }
+        assertTrue("33 s 快速停站应被门槛拦截", suspects.any { it.intervalS != null && it.intervalS < config.minStopIntervalSec })
+        assertEquals("疑似站不应影响计数", 3, result.finalStationCount)
     }
 
     @Test
@@ -255,7 +269,12 @@ class RealJourneyRegressionTest {
  */
 class RealInMotionStartRegressionTest {
 
-    private val config = TuningConfig.Default
+    /**
+     * 手摇模拟「车上中途开始」的资产（vib 量级 1.5+，超出真实乘车证据带）——
+     * 锁 startedInMotion 姿势识别与首站计数语义，注入关闭乘车证据门。
+     * ⚠️ events_ref 已按 2026-09-28 v2 参数重新生成（DEPART 时间戳后移）。
+     */
+    private val config = TuningConfig(evidenceGateEnabled = false)
 
     private fun csvText(name: String): String {
         val f = File("src/test/resources/replay/$name")

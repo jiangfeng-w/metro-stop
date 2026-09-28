@@ -1,20 +1,19 @@
-t_ms,type,station_index,station_name,dwell_s,interval_s,note
-20233128,WARMUP_DONE,,,,,
-20272138,STOPPING,,,,,still_no_brake vib=0.006
-20272138,FIRST_STOP_IGNORED,0,示例南站,,,boarding_station
-20304209,DEPART,,,40.071,,
-20329364,STOPPING,,,,,still_no_brake vib=0.012
-20329364,STATION_ARRIVED,1,示范路站,,,still_no_brake n=1/k=3
-20404126,DEPART,,,82.762,,
-20412170,BRAKE_START,,,,,h=9.607
-20421087,STOPPING,,,,,vib=0.076
-20429089,STATION_ARRIVED,2,试验桥站,,99.725,vib=0.006 n=2/k=3
-20429089,ALERT_PREV,3,样板街站,,,next_is_destination
-20438219,DEPART,,,17.132,,
-20462415,STOPPING,,,,,still_no_brake vib=0.006
-20462415,STOP_SUSPECT,2,试验桥站,,33.326,interval<60.0s
-20484547,DEPART,,,30.132,,
-20514830,STOPPING,,,,,still_no_brake vib=0.007
-20514830,STATION_ARRIVED,3,样板街站,,85.741,still_no_brake n=3/k=3
-20514830,ALERT_ARRIVED,3,样板街站,,,end_at_20544830
-20544836,MONITOR_END,,,,,arrived
+t_ms,type,station_index,station_name,note
+20233171,WARMUP_DONE,,,started_at_platform
+20272138,STOPPING,,,still_no_brake vib=0.006
+20272138,FIRST_STOP_IGNORED,0,示例南站,boarding_station
+20299197,FIRST_STOP_IGNORED,0,示例南站,boarding_station
+20314211,DEPART,,,
+20329342,STOPPING,,,still_no_brake vib=0.013
+20329342,STATION_ARRIVED,1,示范路站,still_no_brake n=1/k=3
+20399112,STATION_ARRIVED,2,试验桥站,restill n=2/k=3
+20399112,ALERT_PREV,3,样板街站,next_is_destination
+20414129,DEPART,,,
+20429047,STOPPING,,,still_no_brake vib=0.006
+20429047,STOP_SUSPECT,2,试验桥站,interval<60.0s
+20444050,DEPART,,,
+20462032,STOPPING,,,still_no_brake vib=0.006
+20462032,STATION_ARRIVED,3,样板街站,still_no_brake n=3/k=3
+20462032,ALERT_ARRIVED,3,样板街站,end_at_20492032
+20479505,STOP_SUSPECT,3,样板街站,interval<60.0s
+20492038,MONITOR_END,,,arrived

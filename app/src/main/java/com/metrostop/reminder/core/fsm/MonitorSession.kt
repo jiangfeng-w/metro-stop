@@ -24,7 +24,8 @@ data class TickOutcome(
  * - `n > k` → OVERSHOOT（只发一次）；
  * - `k == 1` 特例：预热结束即发 ALERT_PREV；
  * - 首站不计数（hasRun=false，视为上车站本身）、两站最短间隔门槛（STOP_SUSPECT）；
- * - 手动纠错 ±1；最长 90 分钟兜底结束。
+ * - 手动纠错 ±1：纠错到 k−1 / k / >k 时**同样补发对应提醒**（2026-09-28 实测缺口修复），
+ *   且纠错时刻更新间隔门槛锚点 lastCountedMs；最长 90 分钟兜底结束。
  */
 class MonitorSession(
     val route: RouteSpec,
@@ -246,6 +247,8 @@ class MonitorSession(
     fun correctUp(nowMs: Long, by: Int = 1): TickOutcome {
         if (!running) return TickOutcome()
         stationCount += by
+        // 纠错代表一次真实到站：间隔门槛以纠错时刻为锚，否则纠错后的自动到站可能被误拦
+        lastCountedMs = nowMs
         val events = ArrayList<DetectorEvent>(2)
         events += DetectorEvent(
             tMs = nowMs,
@@ -254,15 +257,40 @@ class MonitorSession(
             stationName = route.currentStation(stationCount).name,
             note = "by=$by n=$stationCount",
         )
-        if (stationCount > route.stopCount && !overshootSent) {
-            overshootSent = true
-            events += DetectorEvent(
-                tMs = nowMs,
-                type = DetectorEventType.OVERSHOOT,
-                stationIndex = route.destinationIndex,
-                stationName = route.destinationStation.name,
-                note = "corrected",
-            )
+        // 纠错补发提醒（2026-09-28 实测缺口：纠错到 k−1 / k 时用户全程收不到任何提醒）：
+        // 纠错语义与自动到站一致 —— 到 k−1 发 D−1、到 k 发到达提醒并排定自动结束、超 k 发坐过站。
+        val k = route.stopCount
+        when {
+            stationCount == k -> {
+                if (!alertArrivedSent) {
+                    alertArrivedSent = true
+                    arrived = true
+                    scheduledEndAtMs = nowMs + (config.endGraceSec * 1000).toLong()
+                    events += DetectorEvent(
+                        tMs = nowMs,
+                        type = DetectorEventType.ALERT_ARRIVED,
+                        stationIndex = route.destinationIndex,
+                        stationName = route.destinationStation.name,
+                        note = "end_at_${scheduledEndAtMs}",
+                    )
+                    if (!alertPrevSent && k > 1) alertPrevSent = true
+                }
+            }
+
+            stationCount == k - 1 -> emitPreAlert(nowMs)?.let { events += it }
+
+            stationCount > k -> {
+                if (!overshootSent) {
+                    overshootSent = true
+                    events += DetectorEvent(
+                        tMs = nowMs,
+                        type = DetectorEventType.OVERSHOOT,
+                        stationIndex = route.destinationIndex,
+                        stationName = route.destinationStation.name,
+                        note = "corrected",
+                    )
+                }
+            }
         }
         return TickOutcome(events = events, scheduledEndAtMs = scheduledEndAtMs)
     }
@@ -272,6 +300,7 @@ class MonitorSession(
         if (!running) return TickOutcome()
         val before = stationCount
         stationCount = (stationCount - by).coerceAtLeast(0)
+        lastCountedMs = nowMs
         val events = ArrayList<DetectorEvent>(1)
         events += DetectorEvent(
             tMs = nowMs,

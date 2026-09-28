@@ -1,7 +1,9 @@
-t_ms,type,station_index,station_name,dwell_s,interval_s,note
-23946073,WARMUP_DONE,,,,,started_in_motion
-23946073,ALERT_PREV,1,示范路站,,,next_is_destination
-23963330,STOPPING,,,,,still_no_brake vib=0.008
-23963330,STATION_ARRIVED,1,示范路站,,,still_no_brake n=1/k=1
-23963330,ALERT_ARRIVED,1,示范路站,,,end_at_23993330
-23993335,MONITOR_END,,,,,arrived
+t_ms,type,station_index,station_name,note
+23946115,WARMUP_DONE,,,started_in_motion
+23946115,ALERT_PREV,1,示范路站,next_is_destination
+23963288,STOPPING,,,still_no_brake vib=0.009
+23963288,STATION_ARRIVED,1,示范路站,still_no_brake n=1/k=1
+23963288,ALERT_ARRIVED,1,示范路站,end_at_23993288
+23977099,STOP_SUSPECT,1,示范路站,interval<60.0s
+23991441,STOP_SUSPECT,1,示范路站,interval<60.0s
+23993293,MONITOR_END,,,arrived

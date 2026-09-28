@@ -27,10 +27,15 @@ import kotlin.math.sin
  *
  * 真机实测后：把导出的 `sensor_*.csv` 放进 `app/src/test/resources/replay/`，
  * 再补一条「实测 CSV 回归」用例（阈值改动后必须重跑）。
+ *
+ * ⚠️ 2026-09-28：合成信号沿用「手摇 = 列车」的旧量级（vib≈1.5，超出真实乘车证据带
+ * [0.10, 0.35]）——真实通勤实测已证伪「手摇语义等价列车运行」，本类只锁**状态机语义**
+ * （计数 / 提醒 / 间隔门槛 / 自动结束），故注入关闭乘车证据门；
+ * 真实振动量级下的行为由 [RealCommuteRegressionTest] 用真实通勤 CSV 锁定。
  */
 class CsvReplayTest {
 
-    private val config = TuningConfig.Default
+    private val config = TuningConfig(evidenceGateEnabled = false)
     private val fs = 50.0
 
     private enum class Phase { STATIC, CRUISE, BRAKE, STILL }
@@ -38,21 +43,23 @@ class CsvReplayTest {
     private data class Seg(val fromSec: Double, val toSec: Double, val phase: Phase)
 
     /**
-     * 一次完整行程（k = 2）：
-     * 预热 → 巡航 → 停车（上车站，忽略）→ 起步巡航 → 停车（n=1，发 D−1 提醒）
+     * 一次完整行程（k = 2，2026-09-28 起改为「站台开始」场景）：
+     * 预热（静立）→ 上车站停稳（忽略）→ 起步巡航 → 停车（n=1，发 D−1 提醒）
      * → 起步巡航 → 停车（n=2=k，发到达提醒并排定 30 s 后结束）→ 静置等自动结束。
+     *
+     * ⚠️ v2 起 hasRun 可由巡航振动直置（vib>阈值持续 30 s）——若在首停前安排长巡航，
+     * 首停会被计为真实第 1 站（信号语义本来就是「车在动」）；要表达「上车站本身」，
+     * 首停必须紧跟预热（真实的站台开始姿势）。
      */
     private val timeline = listOf(
         Seg(0.0, 21.0, Phase.STATIC),    // 预热（startGraceSec = 20）
-        Seg(21.0, 60.0, Phase.CRUISE),
-        Seg(60.0, 65.0, Phase.BRAKE),
-        Seg(65.0, 82.0, Phase.STILL),    // → FIRST_STOP_IGNORED（到站 ~74：含 1 s 窗衰减 + 8 s 停稳）
-        Seg(82.0, 190.0, Phase.CRUISE),  // → DEPART（起步确认 5 s）
-        Seg(190.0, 195.0, Phase.BRAKE),
-        Seg(195.0, 215.0, Phase.STILL),  // → n=1 = k-1 → ALERT_PREV
-        Seg(215.0, 330.0, Phase.CRUISE), // → DEPART
-        Seg(330.0, 335.0, Phase.BRAKE),
-        Seg(335.0, 380.0, Phase.STILL),  // → n=2 = k → ALERT_ARRIVED，30 s 后 MONITOR_END
+        Seg(21.0, 38.0, Phase.STILL),    // → FIRST_STOP_IGNORED（上车站本身，到站 ~29）
+        Seg(38.0, 146.0, Phase.CRUISE),  // → DEPART（起步确认 10 s）
+        Seg(146.0, 151.0, Phase.BRAKE),
+        Seg(151.0, 171.0, Phase.STILL),  // → n=1 = k-1 → ALERT_PREV（到站 ~159）
+        Seg(171.0, 286.0, Phase.CRUISE), // → DEPART
+        Seg(286.0, 291.0, Phase.BRAKE),
+        Seg(291.0, 336.0, Phase.STILL),  // → n=2 = k → ALERT_ARRIVED，30 s 后 MONITOR_END
     )
 
     private fun phaseAt(t: Double): Phase {

@@ -31,6 +31,12 @@ enum class DetectorEventType {
     /** 疑似到站但不计数（距上一站 < minStopIntervalSec） */
     STOP_SUSPECT,
 
+    /**
+     * 到站判定被乘车证据门拦截（近期无乘车证据带：站台静立 / 走路后站住等非乘车停顿）。
+     * 仅进 events CSV 供离线分析，不产生任何用户可见反馈。
+     */
+    EVIDENCE_BLOCKED,
+
     /** 离站 */
     DEPART,
 
