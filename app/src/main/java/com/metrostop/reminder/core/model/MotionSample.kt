@@ -22,11 +22,26 @@ data class MotionSample(
     /** 是否带系统级去重力线性加速度（TYPE_LINEAR_ACCELERATION） */
     val hasLinear: Boolean
         get() = lx != null && ly != null && lz != null
+
+    /** 陀螺仪三轴幅值（rad/s）；不可用为 null */
+    val gyroMag: Float?
+        get() {
+            val x = gx ?: return null
+            val y = gy ?: return null
+            val z = gz ?: return null
+            return kotlin.math.sqrt(x * x + y * y + z * z)
+        }
 }
 
-/** 特征提取结果：H = 纵向加减速（刹车判据），vib = 3–20 Hz 振动 RMS（行驶 / 停稳判据） */
+/**
+ * 特征提取结果（v3 起含陀螺幅值）：
+ * - `H` = 纵向加减速（刹车判据）；
+ * - `vib` = 3–20 Hz 振动 RMS（行驶 / 停稳判据）；
+ * - `gyroMag` = 陀螺三轴幅值原值（rad/s，GaitGate 内做 1 s RMS；不可用时为 0，GaitGate 视为「无陀螺数据」降级）。
+ */
 data class Features(
     val tMs: Long,
     val h: Float,
     val vib: Float,
+    val gyroMag: Float = 0f,
 )

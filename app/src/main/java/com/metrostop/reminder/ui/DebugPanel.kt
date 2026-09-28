@@ -43,19 +43,19 @@ fun DebugPanel(
             if (!debugExpanded) return@Column
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Metric("state", state.state.name, Modifier.weight(1.4f))
-                Metric("vib", "%.3f".format(state.vib), Modifier.weight(1f))
-                Metric("H", "%.3f".format(state.h), Modifier.weight(1f))
-                Metric("n", "${state.stationCount}/${state.totalStops}", Modifier.weight(1f))
+                Metric("状态", state.state.cnName, Modifier.weight(1.4f))
+                Metric("车振(vib)", "%.3f".format(state.vib), Modifier.weight(1f))
+                Metric("加减速(H)", "%.3f".format(state.h), Modifier.weight(1f))
+                Metric("已计站(n)", "${state.stationCount}/${state.totalStops}", Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Metric("采样率", "%.1f Hz".format(measuredHz), Modifier.weight(1f))
                 Metric(
                     "传感器",
-                    if (usingLinear) "LINEAR" else "ACCEL(降级)",
+                    if (usingLinear) "线性加速度" else "加速度计(降级)",
                     Modifier.weight(1.2f),
                 )
-                Metric("CSV", if (state.recording) "录制中" else "关", Modifier.weight(1f))
+                Metric("记录(CSV)", if (state.recording) "录制中" else "关", Modifier.weight(1f))
             }
             if (state.dataGap) {
                 Text("⚠ 采样断流中（已重新预热）", color = MaterialTheme.colorScheme.error)

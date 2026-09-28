@@ -1,5 +1,6 @@
 package com.metrostop.reminder.core.fsm
 
+import com.metrostop.reminder.core.feature.GaitGate
 import com.metrostop.reminder.core.model.DetectorEvent
 import com.metrostop.reminder.core.model.DetectorEventType
 import com.metrostop.reminder.core.model.DetectorState
@@ -84,11 +85,21 @@ class StationStopDetector(private val config: TuningConfig) {
     private var runSpanStartMs = 0L
     private var runSpanLastMs = 0L
 
+    // ---------- v3: 预热静稳否决（startedInMotion 的「站台开始」铁证） ----------
+    private var warmupStillForSec = 0.0
+    private var startInMotionVetoed = false
+
     // ---------- v2: 乘车证据带（已闭合段 + 进行中段） ----------
     private var bandStartMs = 0L
     private var bandLastMs = 0L
     private val bandSegStarts = ArrayList<Long>(8)
     private val bandSegEnds = ArrayList<Long>(8)
+
+    // ---------- v3: 步态门 + 通道 B（站姿乘车）的 1 s 桶统计 ----------
+    private val gaitGate = GaitGate(config)
+
+    /** 通道 B 滑窗桶：Triple(秒序号, 本秒 vib 带内, 本秒非步行) */
+    private val rideShapeBuckets = ArrayDeque<Triple<Long, Boolean, Boolean>>(160)
 
     /** 上次计数到站后振动是否回升过（restill 的前置条件：没有回升就没有「新的一站」） */
     private var vibRisenSinceArrival = false
@@ -106,6 +117,15 @@ class StationStopDetector(private val config: TuningConfig) {
         brakeReleaseForSec = 0.0
         runForSec = 0.0
         resetSpans()
+        gaitGate.reset()
+        rideShapeBuckets.clear()
+        hSecBuckets.clear()
+        hAcc = 0f
+        hAccN = 0
+        hAccSec = 0L
+        secAcc = 0L to Triple(0f, 0, false)
+        warmupStillForSec = 0.0
+        startInMotionVetoed = false
         startMs = nowMs
         prevSampleMs = nowMs
         warmupUntilMs = nowMs + (config.startGraceSec * 1000).toLong()
@@ -133,6 +153,15 @@ class StationStopDetector(private val config: TuningConfig) {
         brakeReleaseForSec = 0.0
         runForSec = 0.0
         resetSpans()
+        gaitGate.reset()
+        rideShapeBuckets.clear()
+        hSecBuckets.clear()
+        hAcc = 0f
+        hAccN = 0
+        hAccSec = 0L
+        secAcc = 0L to Triple(0f, 0, false)
+        warmupStillForSec = 0.0
+        startInMotionVetoed = false
     }
 
     private fun resetSpans() {
@@ -197,9 +226,25 @@ class StationStopDetector(private val config: TuningConfig) {
         if (state == DetectorState.WARMUP) {
             // 预热期内观察振动：持续在动 → 判定「开始时列车已在行驶」
             // （决定首站是否忽略，见 startedInMotion 注释）
+            // v3 终案（2026-09-28 早/晚通勤实测裁决）：**静稳否决**——预热内出现
+            // ≥[TuningConfig.warmupStillVetoSec] 连续静稳（vib < vibStopTh）即证明「还没上车」，
+            // 一票否决 startedInMotion。依据：站台开始早通勤预热 0-20s vib p50=0.077、大量
+            // 静稳秒；中途上车晚通勤 0-20s 全 >0.085 无静稳。而站台进站前的人群/结构振动会
+            // 凑满 startMovingConfirmSec 把站台开始误判成「车上中途开始」（早通勤实测
+            // WARMUP_DONE=started_in_motion 但人在站台）。冲高判据（vib>startSurgeTh）不可用于
+            // 此处：晚通勤预热起步冲高只有 0.386~0.425 < 0.45，会吞掉前 5 站（实测）。
+            if (f.vib < config.vibStopTh) {
+                warmupStillForSec += dtSec
+                if (warmupStillForSec >= config.warmupStillVetoSec) {
+                    startInMotionVetoed = true
+                    startedInMotion = false
+                }
+            } else {
+                warmupStillForSec = 0.0
+            }
             if (rideLike(f.vib)) {
                 runForSec += dtSec
-                if (runForSec >= config.startMovingConfirmSec) {
+                if (runForSec >= config.startMovingConfirmSec && !startInMotionVetoed) {
                     startedInMotion = true
                 }
             } else {
@@ -230,7 +275,14 @@ class StationStopDetector(private val config: TuningConfig) {
         val running = f.vib > config.vibRunTh
         val still = f.vib < config.vibStopTh
         val stillBroke = updateStillSpan(now, f.vib)
-        updateBand(now, f.vib)
+
+        // ---------- v3: 步态门 + 通道 B 滑桶 ----------
+        // 步态门（需求 4.1）：走路样本**不累计乘车证据带**（防走路段污染带证据；
+        // 走路本身 vib 高不会形成带内段，但站台走路—站住的过渡抖动会混入）。
+        val walking = gaitGate.process(now, f.gyroMag)
+        if (!walking) updateBand(now, f.vib)
+        updateRideShapeBuckets(now, f.vib, walking)
+        updateHSecBuckets(now, f.h)
         if (running || stillBroke) vibRisenSinceArrival = true
 
         when (state) {
@@ -240,6 +292,10 @@ class StationStopDetector(private val config: TuningConfig) {
                 // 判据：vib 高于停稳阈值（gate-ON）／运行阈值（gate-OFF 兼容手摇资产）的
                 // 连续跨度（容忍 stillTolSec 毛刺）≥ cruiseRunConfirmSec。
                 // 不用证据带：真实短区间频繁出带会吞掉首个真实站（2026-09-28 实测复现）。
+                // v3 说明：曾试过加「跨度内起步冲高」附加条件防站台误置位，实测否决——
+                // 0.45 阈值修好早通勤却吞掉晚通勤起步（0.386~0.425 < 0.45），0.35 又锁死
+                // 早通勤坐姿起步（仅 0.10~0.24）；且站台误置 hasRun 的后果已被静稳否决
+                // （startedInMotion）+ 通道 B 证据门兜住，保持 v2 纯跨度语义。
                 val runEvidence = if (config.evidenceGateEnabled) f.vib > config.vibStopTh else f.vib > config.vibRunTh
                 if (runEvidence) {
                     if (runSpanStartMs == 0L) runSpanStartMs = now
@@ -384,12 +440,137 @@ class StationStopDetector(private val config: TuningConfig) {
     private fun hasRideEvidence(now: Long): Boolean {
         val minMs = (config.rideBandMinSec * 1000).toLong()
         val winStartMs = now - (config.rideBandWindowSec * 1000).toLong()
+        if (hasBandEvidence(now)) return true
+        // v3 通道 B：站姿乘车——带内占比 + 非步行占比双门槛（抗 fidget 碎片化）
+        if (hasRideStandEvidence(now)) return true
+        return false
+    }
+
+    /** 通道 A：vib 带内连续段（v2 原逻辑，独立出便于诊断与组合判定） */
+    private fun hasBandEvidence(now: Long): Boolean {
+        val minMs = (config.rideBandMinSec * 1000).toLong()
+        val winStartMs = now - (config.rideBandWindowSec * 1000).toLong()
         if (bandStartMs != 0L && bandLastMs >= winStartMs && bandLastMs - bandStartMs >= minMs) return true
         for (i in bandSegStarts.indices) {
             if (bandSegEnds[i] >= winStartMs && bandSegEnds[i] - bandSegStarts[i] >= minMs) return true
         }
         return false
     }
+
+    /**
+     * 通道 B：站姿乘车（占比 + 列车动态组合判据）。
+     *
+     * 离线标定结论（2026-09-28 早/晚通勤数据，全量真值点验证）：
+     * - 站姿乘车与站台静立在 vib 分布（p50 0.115 vs 0.106）与 gyro（0.083 vs 0.079）上**几乎同分布**，
+     *   纯窗内统计量不可分——只能靠占比 + 物理形态组合；
+     * - 主门槛：150 s 窗「vib 带内」占比 ≥[TuningConfig.rideStandBandPct]（48%）→ 放行；
+     * - 次门槛：占比 ∈[45%, 48%) 且窗内「列车动态冲高」（H >[TuningConfig.hSurgeTh] 持续
+     *   ≥[TuningConfig.hSurgeMinSec]）≥[TuningConfig.rideStandSurgeCount]（5 次）→ 放行；
+     * - 满窗要求：桶数 <150（监测开始后 150 s 内）一律不过——否则首个窗占比虚高会误放行
+     *   站台静立（早通勤 t+158.7 实测：139 桶时占比 49% 假阳性）；
+     * - 校验（两批数据回放）：早通勤（坐姿）12/12 不受影响、站台静立全拦；晚通勤（站姿）
+     *   真站放行 7 组、区间信号停车 t+440/827 被 45% 下限拦住（两者 v2 也拦不住，v2 现场
+     *   靠用户纠错；此处 v3 已能拦掉这两组）。
+     */
+    private fun hasRideStandEvidence(now: Long): Boolean {
+        val winStartSec = (now - (config.rideStandWindowSec * 1000).toLong()) / 1000
+        var inBand = 0
+        var total = 0
+        for ((sec, band, _w) in rideShapeBuckets) {
+            if (sec < winStartSec) continue
+            total++
+            if (band) inBand++
+        }
+        // 满窗要求（v3 修订）：桶数不满 rideStandWindowSec 一律不过（B 通道本质需要 150 s 历史）。
+        // 实测教训：早通勤 t+158.745（站台等车）时桶仅 139（WARMUP 20 s 后才开始累计），
+        // 占比 49% 击穿 48 门槛被误放行；真站窗更大时站台占比只有 ~47%（分母含更多出带秒）。
+        if (total < config.rideStandWindowSec.toInt()) return false
+        val pct = inBand * 100.0 / total
+        if (pct >= config.rideStandBandPct) return true
+        if (pct < config.rideStandBandPctLo) return false
+        return countSurges(winStartSec, now / 1000) >= config.rideStandSurgeCount
+    }
+
+    /** 窗内「列车动态冲高」段数：H 均值 >[TuningConfig.hSurgeTh] 连续 ≥[TuningConfig.hSurgeMinSec] 秒 */
+    private fun countSurges(winStartSec: Long, endSec: Long): Int {
+        var count = 0
+        var run = 0
+        var lastSec = winStartSec - 2 // 允许首个冲高从窗边界开始
+        for ((sec, hMean) in hSecBuckets) {
+            if (sec < winStartSec || sec > endSec) continue
+            if (hMean > config.hSurgeTh) {
+                if (run == 0 && sec - lastSec > 2) {
+                    // 新段起点（与上一冲高断开 >2s）
+                }
+                run++
+                lastSec = sec
+            } else {
+                if (run >= config.hSurgeMinSec) count++
+                run = 0
+            }
+        }
+        if (run >= config.hSurgeMinSec) count++
+        return count
+    }
+
+    /**
+     * 通道 B 滑桶维护：每样本把「本秒」聚合进桶（1 Hz 决策粒度）。
+     *
+     * ⚠️ 聚合语义必须与离线标定一致（**秒均值法**，非逐样本 OR）：
+     * 站台静立段 vib 在 0.08~0.13 抖动，逐样本 OR 会把占比从 47% 虚高到 65%、
+     * 击穿 50% 门槛（早通勤误放行已实测）。实现：秒内滚动累计均值，切秒时落桶。
+     */
+    private fun updateRideShapeBuckets(now: Long, vib: Float, walking: Boolean) {
+        val sec = now / 1000
+        if (secAcc.first == sec) {
+            // 同一秒：滚动均值
+            val (acc, n, _) = secAcc.second
+            secAcc = secAcc.copy(second = Triple(acc + vib, n + 1, walking))
+            return
+        }
+        // 切秒：上一秒落桶（首次调用 secAcc.first==0 直接初始化）
+        if (secAcc.first != 0L) {
+            val (acc, n, lastWalk) = secAcc.second
+            if (n > 0) {
+                val mean = acc / n
+                rideShapeBuckets.addLast(Triple(secAcc.first, mean >= config.rideBandLo && mean <= config.rideBandHi, !lastWalk))
+            }
+        }
+        secAcc = sec to Triple(vib, 1, walking)
+        // 滑窗裁剪：只保留 rideStandWindowSec
+        val winStartSec = (now - (config.rideStandWindowSec * 1000).toLong()) / 1000
+        while (rideShapeBuckets.isNotEmpty() && rideShapeBuckets.first().first < winStartSec) {
+            rideShapeBuckets.removeFirst()
+        }
+    }
+
+    /** 当前秒聚合状态：(秒序号, (vib 累计, 样本数, 本秒最后一次 walking 输出)) */
+    private var secAcc: Pair<Long, Triple<Float, Int, Boolean>> = 0L to Triple(0f, 0, false)
+
+    /** H 秒均值桶维护（秒均值落桶，语义与 vib 桶一致） */
+    private fun updateHSecBuckets(now: Long, h: Float) {
+        val sec = now / 1000
+        if (sec != hAccSec) {
+            if (hAccN > 0) {
+                hSecBuckets.addLast(hAccSec to hAcc / hAccN)
+            }
+            hAcc = 0f
+            hAccN = 0
+            hAccSec = sec
+            val winStartSec = (now - (config.rideStandWindowSec * 1000).toLong()) / 1000
+            while (hSecBuckets.isNotEmpty() && hSecBuckets.first().first < winStartSec) {
+                hSecBuckets.removeFirst()
+            }
+        }
+        hAcc += h
+        hAccN++
+    }
+
+    /** H 秒均值桶（通道 B 冲高计数用）：秒 → H 均值 */
+    private val hSecBuckets = ArrayDeque<Pair<Long, Float>>(160)
+    private var hAcc = 0f
+    private var hAccN = 0
+    private var hAccSec = 0L
 
     /**
      * 到站判定（计数点）：静稳跨度确认时调用（CRUISE / STOPPING / STOPPED-restill 三条入口共用）。

@@ -28,3 +28,6 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# ZCode 本地会话文件
+.zcode/

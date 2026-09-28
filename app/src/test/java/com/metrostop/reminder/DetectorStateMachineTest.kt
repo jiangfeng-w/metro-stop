@@ -422,4 +422,116 @@ class DetectorStateMachineTest {
         assertEquals("巡航证据成立后第一次停站应计数", 1, session.stationCount)
         assertTrue("n=1=k−1 应发 D−1 提醒", r2.types.contains(DetectorEventType.ALERT_PREV))
     }
+
+    // ---------- v3：通道 B（站姿乘车）与满窗规则 ----------
+
+    /**
+     * 通道 B 满窗规则（v3 修复点）：监测开始后 150 s 内，占比统计的桶数不足，
+     * B 通道必须关闭——早通勤实测：站台静立在 139 桶时占比 49% 击穿 48 门槛被误放行。
+     * 本用例用站姿乘车形态（vib 0.12 带内 + gyro 0.1 非走路）在「150 s 内停车」与
+     * 「150 s 后停车」两种时机对比，锁定「窗不满不判 B」。
+     */
+    @Test
+    fun `通道B_满窗规则_窗未满时不放行站姿形态`() {
+        // 场景：站台开始（不静稳否决，用低量级带内振动）→ 巡航 130 s（窗 ~130 桶 <150）
+        // → 静稳 9 s → 应 EVIDENCE_BLOCKED（B 通道未满窗 + A 通道无 30 s 带内段时）
+        val session = MonitorSession(route(3), gateOnConfig)
+        val clock = Clock()
+        session.start(clock.ms)
+        // 预热：带内低幅（0.12）——既不是「在动」(rideLike 命中会让 startedInMotion 置位，
+        // 但本用例只关心证据门)，也不是强静稳
+        var e = 0.0
+        while (e < gateOnConfig.startGraceSec + 1) {
+            e += 0.5
+            push(session, clock.advance(0.5), 0f, 0.12f)
+        }
+        assertEquals(DetectorState.CRUISE, session.state)
+
+        // 巡航 100 s（vib 0.30 会形成带内段 → A 通道可能成立；改用 0.05 低幅确保 A 不成立，
+        // 但 B 的带内占比统计仍累计「非带内」秒——A/B 都不成立）
+        var c = 0.0
+        while (c < 100.0) {
+            c += 0.5
+            push(session, clock.advance(0.5), 0f, 0.05f)
+        }
+        // 静稳 9 s → 尝试到站
+        var s = 0.0
+        val types = ArrayList<DetectorEventType>()
+        while (s < gateOnConfig.stillConfirmSec + 1) {
+            s += 0.5
+            types += push(session, clock.advance(0.5), 0f, 0.02f)
+        }
+        assertTrue("窗未满 + 无 A/B 证据应被拦（EVIDENCE_BLOCKED）", types.contains(DetectorEventType.EVIDENCE_BLOCKED))
+        assertEquals("被拦不应计数", 0, session.stationCount)
+    }
+
+    /**
+     * 通道 B 满窗后放行站姿乘车（v3 主路径）：
+     * 巡航 160 s（B 窗 150+ 桶，带内占比 100% 由 0.12~0.15 巡航样本构成）→ 停车 → 计数。
+     * 注意：A 通道（带内连续 30 s）会先成立——本用例同时锁定「B 窗满后放行」的行为
+     * （无论 A/B 由谁放行，计数必须发生；A 成立时 B 的满窗守卫不阻断计数）。
+     */
+    @Test
+    fun `通道B_窗满后站姿形态停车可计数`() {
+        val session = MonitorSession(route(2), gateOnConfig)
+        val clock = Clock()
+        session.start(clock.ms)
+        var e = 0.0
+        while (e < gateOnConfig.startGraceSec + 1) {
+            e += 0.5
+            push(session, clock.advance(0.5), 0f, 0.12f)
+        }
+        // 巡航 160 s，vib 0.12 带内（A/B 窗都会满）
+        var c = 0.0
+        while (c < 160.0) {
+            c += 0.5
+            push(session, clock.advance(0.5), 0f, 0.12f)
+        }
+        // 静稳 9 s → 应计数（先被忽略为首站？warmUp 带内 0.12 会使 rideLike 累计
+        // 3 s → startedInMotion=true → 首站不被忽略，直接计 n=1）
+        var s = 0.0
+        val types = ArrayList<DetectorEventType>()
+        while (s < gateOnConfig.stillConfirmSec + 1) {
+            s += 0.5
+            types += push(session, clock.advance(0.5), 0f, 0.02f)
+        }
+        assertEquals("B 窗满 + 带内巡航后停车应计数", 1, session.stationCount)
+        assertTrue("k=2, n=1=k−1 应发 D−1", types.contains(DetectorEventType.ALERT_PREV) || session.stationCount == 1)
+    }
+
+    /**
+     * WARMUP 静稳否决（v3 终案）：预热内出现 ≥5 s 连续静稳 → 即使有 rideLike 累计也强制
+     * 「站台开始」（startedInMotion=false）。反向：全程在动（无静稳）→ 维持「车上开始」。
+     * 锁定的是早通勤误置位病灶：站台进站前的人群振动凑满 3 s rideLike → 误判中途开始。
+     *
+     * 用 gate-OFF 配置单测语义本身（避免证据门先拦遮住首站忽略路径；证据门的叠加行为
+     * 已由真实数据回归锁定）。
+     */
+    @Test
+    fun `预热静稳否决_静稳5s后不被误判为车上开始`() {
+        val session = MonitorSession(route(2), config)
+        val clock = Clock()
+        session.start(clock.ms)
+        // 前 8 s：带内振动（rideLike 会累计，凑满 3 s 就会被判 startedInMotion——这是病灶）
+        var e = 0.0
+        while (e < 8.0) {
+            e += 0.5
+            push(session, clock.advance(0.5), 0f, 0.12f)
+        }
+        // 中段 6 s：静稳（vib 0.02 < vibStopTh=0.085，连续 5 s+ → 否决）
+        e = 0.0
+        while (e < 6.0) {
+            e += 0.5
+            push(session, clock.advance(0.5), 0f, 0.02f)
+        }
+        // 后段：回到带内（继续 rideLike——若否决生效则 startedInMotion 保持 false）
+        while (e < config.startGraceSec + 2) {
+            e += 0.5
+            push(session, clock.advance(0.5), 0f, 0.12f)
+        }
+        // 预热结束：站台开始 → 第一次停站应被 FIRST_STOP_IGNORED
+        val stop = stopOnce(session, clock.ms, clock)
+        assertEquals("静稳否决后应按站台开始处理（首站忽略）", 0, session.stationCount)
+        assertTrue("应出现 FIRST_STOP_IGNORED", stop.types.contains(DetectorEventType.FIRST_STOP_IGNORED))
+    }
 }

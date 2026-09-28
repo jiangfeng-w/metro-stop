@@ -28,4 +28,22 @@ enum class DetectorState {
 
     /** 已结束 */
     FINISHED,
+    ;
+
+    /**
+     * 面向用户的中文名（v3「UI 术语中文化」，需求第六节对照表）。
+     * 注意：**枚举名仍进 CSV / 事件 note**（分析字段），中文名只用于界面与通知文案。
+     */
+    val cnName: String
+        get() = when (this) {
+            IDLE -> "未开始"
+            WARMUP -> "预热中"
+            CRUISE -> "巡航中"
+            BRAKING -> "制动中"
+            STOPPING -> "停稳确认中"
+            STOPPED -> "已停稳"
+            DEPARTING -> "起步中"
+            INTERRUPTED -> "信号中断"
+            FINISHED -> "已结束"
+        }
 }

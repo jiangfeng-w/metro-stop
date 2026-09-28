@@ -184,6 +184,8 @@ class FeatureExtractor(private val config: TuningConfig) {
 
         lastH = h.toFloat()
         lastVib = vib
-        return com.metrostop.reminder.core.model.Features(tMs = sample.tMs, h = lastH, vib = lastVib)
+        // v3：陀螺幅值原样透传（GaitGate 内做 1 s RMS）；不可用时为 0f（=「无陀螺数据」降级语义）
+        val gyroMag = sample.gyroMag ?: 0f
+        return com.metrostop.reminder.core.model.Features(tMs = sample.tMs, h = lastH, vib = lastVib, gyroMag = gyroMag)
     }
 }

@@ -156,7 +156,8 @@ class MonitorSession(
                 stationIndex = route.boardingIndex,
                 stationName = route.boardingStation.name,
                 intervalS = e.intervalS,
-                note = "boarding_station",
+                // 透传检测层 note（vib=… / 通道 B 判据值）供离线分析
+                note = listOfNotNull("boarding_station", e.note).joinToString(" "),
             )
             return out
         }

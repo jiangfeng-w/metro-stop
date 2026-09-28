@@ -81,7 +81,7 @@ fun StatusCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("状态 ${state.state.name}", style = MaterialTheme.typography.bodySmall)
+                    Text("状态 ${state.state.cnName}", style = MaterialTheme.typography.bodySmall)
                     // 每秒变化的时间放到独立叶子：1 Hz 重组只影响这一个 Text
                     ElapsedText(elapsedSecFlow)
                 }
