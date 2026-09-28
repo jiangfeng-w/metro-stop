@@ -11,7 +11,8 @@
 | `spec/active/<需求>/` | 开发中的需求文档（一个需求一个目录，含子文档与资源） |
 | `spec/done/<需求>/` | 已完成并验收的需求（内容冻结） |
 | `spec/suspended/<需求>/` | 挂起的需求（含搁置原因与恢复条件） |
-| `development.md` | 构建 / 调试 / 踩坑（含 Gradle 版本应急旋钮、国内镜像） |
+| **`进度与交接.md`** | **当前进度 / 交接状态的唯一详细来源**：已完成什么、下一步、需要用户配合的事、红线与通勤实测清单、本机设备与环境状态（`AGENTS.md` 只留规则与指针） |
+| `development.md` | 构建 / 调试 / 踩坑（含 Gradle 版本应急旋钮、国内镜像、环境安装流程） |
 | 本文件 | **需求速览表（唯一清单）** + 自举环境 |
 
 ## 需求速览（唯一清单）
@@ -33,21 +34,28 @@
 
 > 状态含义与流转见 `spec/README.md`。**状态变更必须三处联动**：目录 / frontmatter / 本表。
 
-## 自举环境（新会话必读，本机 2026-09-25 实测）
+## 自举环境（新会话必读，本机 2026-09-28 两机实测）
 
-- **S1 已完成**，本机实际落点：
-  1. **JDK 17**：`D:\Java\jdk-17.0.20.1+1`（系统级 `JAVA_HOME` 已存在）；验证 `java -version` 显示 17.0.20.1。
-  2. **Android cmdline-tools**：`D:\Android\sdk\cmdline-tools\latest\`（含 `android.exe` 新 CLI）；已装 `platform-tools` 37.0.1、`platforms;android-36`、`build-tools;36.0.0` + `35.0.0`；许可已接受（`D:\Android\sdk\licenses\`）；`ANDROID_HOME=D:\Android\sdk`（用户级）。
-     - 注意：新 cmdline-tools 已废弃 `sdkmanager --licenses`，改用 `android.exe sdk install <包>`。
-  3. **Gradle 8.13（免安装）**：`D:\Android\gradle-8.13`；项目 wrapper 已生成，此后只用 `gradlew.bat`（Git Bash 用 `./gradlew`）。
-- **首次编译已验证通过**：`gradlew.bat :app:assembleDebug` → `app\build\outputs\apk\debug\app-debug.apk`。
-- **路径提醒**：本项目在 `D:\Code\own-project\metro-stop`，常不在 IDE 工作区内；新会话若写入受限，先把 IDE 工作区切到本目录。
-- **会话内环境变量可能不生效**：直接用绝对路径调用，如 `D:\Android\sdk\platform-tools\adb.exe`、`D:\Android\gradle-8.13\bin\gradle.bat`；跑 Gradle 命令时若报找不到 java，先 `JAVA_HOME=D:\Java\jdk-17.0.20.1+1`。
-- **国内网络（可选）**：依赖下载慢时，在 `settings.gradle.kts` 的仓库前加阿里云镜像（`https://maven.aliyun.com/repository/google`、`.../public`、`.../gradle-plugin`）。
+- **⚠️ 本机有不止一台开发机**（2026-09-28 用户更换电脑后，新旧两台都在用）：**安装落点刻意保持一致**（下列路径两机相同），便于沿用所有历史文档与命令。
+- **⚠️ 仓库所在路径两机不同**（旧机 `D:\Code\own-project\metro-stop`、新机 `D:\Code\home\own-project\metro-stop`）：**任何时候以 `git rev-parse --show-toplevel` 的输出为准**，不要假定路径。新会话若写入受限，先把 IDE 工作区切到仓库根。
+- **环境落点**（2026-09-28 在新机上从零重装实测走通；完整安装流程见 `development.md`「环境安装流程」）：
+  1. **JDK 17**：`D:\Java\jdk-17.0.20.1+1`（Temurin，`java -version` 显示 17.0.20.1）；用户级 `JAVA_HOME` 已设。
+  2. **Android SDK**：`D:\Android\sdk`（`ANDROID_HOME` / `ANDROID_SDK_ROOT` 用户级）；cmdline-tools **19.0** 位于 `cmdline-tools\latest\`，**只有 `sdkmanager.bat`**（旧文档提到的 `android.exe` 新 CLI 本机没有，`sdkmanager --install <包>` 等价可用）；已装 `platform-tools` 37.0.1、`platforms;android-36`、`build-tools;36.0.0` + `35.0.0`；许可文件在 `D:\Android\sdk\licenses\android-sdk-license`（手写，无需 `--licenses`）。
+  3. **Gradle 8.13（免安装）**：`D:\Android\gradle-8.13\`；日常仍用项目 wrapper `gradlew.bat`（Git Bash 用 `./gradlew`）。
+  4. **Python 3.12.9**：`C:\Users\JF\python3\python`（`docs/spec/**/assets/*.py` 只用标准库，无第三方依赖）。
+- **已验证**：`gradlew.bat :app:testDebugUnitTest :app:assembleDebug` → `app\build\outputs\apk\debug\app-debug.apk`（12.0 MB），**79 项测试全绿**（`--rerun-tasks` 强制重跑复核过）。
+- **环境变量注意**：`JAVA_HOME` / `ANDROID_HOME` / `ANDROID_SDK_ROOT` 与 JDK、platform-tools、cmdline-tools 的 `bin` 已写进用户级 PATH；**但已运行的进程（含 AI 会话）拿不到新值，须用绝对路径或先 `export JAVA_HOME=...`**。
+- **国内网络（必读，2026-09-28 实测）**：本机**到 github.com 的连接超时**，而官方源会把大构件 301 重定向到 GitHub —— 已在**机器级** `C:\Users\JF\.gradle\init.d\mirrors.gradle` 注入阿里云镜像（`repository/public` + `repository/google`，排在官方源之前，不动仓库文件）。Gradle 发行版与 JDK 也从镜像下载（华为云 `mirrors.huaweicloud.com/gradle/`、清华 Adoptium）。详见 `development.md`「国内网络」。
+  - **不要在仓库里改 `settings.gradle.kts` 加镜像**（会污染提交）；机器级 init 脚本对本机所有项目生效。
+- **仓库外分析资产（本仓库不收录，由用户手动同步）**：误报根因分析目录（`FINDINGS.md` + `backup/` 会话录制 + `lab-test/`）与 `jank-artifacts\` 掉帧实验数据都**不在仓库内**，用户自行用压缩包/网盘在两台机器间同步；引用它们的历史文档只要注明「仓库外」即可，不要试图在仓库里找。
+  - ⚠️ **本 GitHub 仓库是 PUBLIC**：这些资产含**真实 GPS 坐标与个人行程**，**不要提交进仓库**。
 
 ## 下一步
 
 **M1（S2）工程验收已通过**（2026-09-25 红米 K80 真机）→ 当前待办：
+
+> 🛠 **环境：新旧两台开发机都已配好（2026-09-28）**，落点一致、构建验证通过（79 项测试全绿）；两台机器**仓库路径不同**，一律以 `git rev-parse --show-toplevel` 为准。详见上文「自举环境」。
+> - **设备当前可能未连接**（`adb devices` 为空时，需手机侧开无线调试；HyperOS 已禁 `pm grant`，解锁/授权仍需人工）。
 
 > 🔧 **ANR 修复（2026-09-26）**：设备堆栈确认服务启动时主线程同步等待 DataStore，已改为先进入前台、再由 IO 协程加载设置；`gradlew test :app:assembleDebug` 通过并已保留数据安装，用户手测确认开始监测不再卡死。
 > 🔧 **三 Tab 首屏优化（2026-09-26）**：冷启动帧数据确认 UI 线程卡帧，主页已拆为「监测 / 设置 / 调试」三个 Tab，默认只组合监测页；已构建并保留数据安装，待手动验收冷启动与 Tab 操作。
@@ -55,7 +63,7 @@
 > ✅ **真实线路数据已上线（2026-09-28 凌晨，`real-line-data`）**：成都 **4 号线（30 站）+ 6 号线（56 站）**替换示例线路（用户提供 OSM 全量数据，与官网线路图 / 交通联合卡站码三源核对）；下拉菜单改 `LazyColumn`（56 站懒加载）；新增资产回归测试；**79 项测试全绿**、算法路径零改动、已 `adb install -r` 装机并真机验证（设备上会话 meta 已出现 `6号线 / 观东→玉双路 / stopCount=12`）。
 > ⏸ **功能开发暂停**：其余新需求继续等待通勤实测与标定数据回来；可选项见下表。
 > ✅ **`csv-storage-policy` 已完成**（2026-09-25 真机验收全部通过，转 `done/`）。
-> 🚫 **通勤实测数据回传前有禁改红线**：算法路径 / 卸载与清数据 / 渠道与包名配置一律冻结，违反则实测作废；清单见 `AGENTS.md`「通勤实测数据回传前的禁止事项」。
+> 🚫 **通勤实测数据回传前有禁改红线**：算法路径 / 卸载与清数据 / 渠道与包名配置一律冻结，违反则实测作废；完整清单见 [`进度与交接.md`](进度与交接.md)「红线」。
 
 | # | 待办 | 说明 |
 |---|---|---|
@@ -73,10 +81,10 @@
 
 **实测中修复的 5 个缺陷**（含 2 个致命：缓刹漏检、磁贴启动自杀）详见 `spec/active/mvp-stop-counter/验收记录.md`。
 
-详细交接见 `AGENTS.md`「当前进度与交接」。里程碑与验收见 `spec/需求与方案.md` 第九节。
+详细交接见 [`进度与交接.md`](进度与交接.md)。里程碑与验收见 `spec/需求与方案.md` 第九节。
 
 > **注意（新会话必读）**：HyperOS 4 beta 已禁止 adb shell 注入按键（`input keyevent`）与 `pm grant`，**解锁 / 授权必须人工在手机上操作**；Git Bash 下 `/sdcard/...` 需加 `MSYS_NO_PATHCONV=1`。命令速查见 `development.md`。
 
 ### 新会话接手（第一句照抄即可）
 
-> 先读 `AGENTS.md` 和 `docs/README.md`，再按 `docs/README.md` 的「下一步」继续（当前：**等 2026-09-28 早通勤实测数据回传**——真实线路 4/6 号线已上线、路线已选好「观东→玉双路 12 站」；回传后推进 `gait-discrimination` 与 `transfer-route`；通勤数据回传前算法路径冻结）。
+> 先读 `AGENTS.md`（规则）、`docs/README.md`（索引 + 需求速览 + 自举环境）和 `docs/进度与交接.md`（当前进度 / 下一步 / 待用户配合事项），再按「下一步」继续（当前：**等 2026-09-28 早通勤实测数据回传**——真实线路 4/6 号线已上线、路线已选好「观东→玉双路 12 站」；回传后推进 `gait-discrimination` 与 `transfer-route`；通勤数据回传前算法路径冻结）。

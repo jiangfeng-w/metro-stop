@@ -25,6 +25,63 @@ adb shell getprop ro.build.version.release
 
 Git Bash 下把 `gradlew.bat` 换成 `./gradlew`。
 
+## 环境安装流程（2026-09-28 在新机器上实测走通；换机 / 重装照此执行）
+
+```bash
+# 0) 准备：装机包统一放 D:\Android\cache\，网络到 GitHub 不通，全部走国内镜像
+MIRROR_JDK='https://mirrors.tuna.tsinghua.edu.cn/Adoptium/17/jdk/x64/windows/OpenJDK17U-jdk_x64_windows_hotspot_17.0.20.1_1.zip'
+MIRROR_GRADLE='https://mirrors.huaweicloud.com/gradle/gradle-8.13-bin.zip'
+MIRROR_CMDLINE='https://dl.google.com/android/repository/commandlinetools-win-13114758_latest.zip'
+
+# 1) JDK 17 → D:\Java（解压后自带 jdk-17.0.20.1+1 顶层目录）
+unzip -q jdk17.zip -d /d/Java
+
+# 2) cmdline-tools → D:\Android\sdk\cmdline-tools\latest（注意是内层 cmdline-tools 目录改名）
+mkdir -p /d/Android/sdk/cmdline-tools
+unzip -q cmdline-tools.zip -d /d/Android/sdk/tmp-cli
+mv /d/Android/sdk/tmp-cli/cmdline-tools /d/Android/sdk/cmdline-tools/latest
+
+# 3) SDK 许可（手写文件，每行一个哈希）
+printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n8933bad161af4178b1185d1a37fbf41ea5269c55\n' > /d/Android/sdk/licenses/android-sdk-license
+
+# 4) SDK 组件（分包装：一个包 zip 坏掉不会连累其它包）
+export JAVA_HOME='D:\Java\jdk-17.0.20.1+1'; export ANDROID_HOME='D:\Android\sdk'
+cd /d/Android/sdk/cmdline-tools/latest/bin
+yes | ./sdkmanager.bat --install "platform-tools"
+yes | ./sdkmanager.bat --install "platforms;android-36"
+yes | ./sdkmanager.bat --install "build-tools;36.0.0" "build-tools;35.0.0"
+./sdkmanager.bat --list_installed          # 核对 4 项都在
+
+# 5) Gradle 8.13 免安装版 → D:\Android\gradle-8.13（注意 zip 内多一层，需上移）
+unzip -q gradle-8.13-bin.zip -d /d/Android/gradle-8.13 && mv /d/Android/gradle-8.13/gradle-8.13/* /d/Android/gradle-8.13/ && rmdir /d/Android/gradle-8.13/gradle-8.13
+
+# 6) local.properties（仓库外配置，不入库；路径用仓库根，两机不同）
+#    在仓库根目录执行：
+echo 'sdk.dir=D\:\\Android\\sdk' > local.properties
+
+# 7) 用户级环境变量（PowerShell，写 HKCU\Environment）
+#    JAVA_HOME=D:\Java\jdk-17.0.20.1+1 ; ANDROID_HOME=ANDROID_SDK_ROOT=D:\Android\sdk
+#    PATH 追加 D:\Java\jdk-17.0.20.1+1\bin ; D:\Android\sdk\platform-tools ;
+#              D:\Android\sdk\cmdline-tools\latest\bin ; D:\Android\gradle-8.13\bin
+```
+
+## 国内网络（本机到 GitHub 不通，必读）
+
+- **现象**：`compileDebugKotlin` 报 `Could not download kotlin-compiler-embeddable-2.2.20.jar → Connect to github.com:443 failed`。
+- **根因**：`repo.maven.apache.org` 与 `services.gradle.org` 对部分大构件 **301 重定向到 `github.com`**，而本机到 GitHub 的连接超时。
+- **解法（已在机器级配好，勿改仓库）**：`C:\Users\JF\.gradle\init.d\mirrors.gradle` 在 `beforeSettings` 里把阿里云镜像插到最前，官方源保留为后备：
+  ```groovy
+  beforeSettings { settings ->
+      settings.dependencyResolutionManagement.repositories {
+          maven { url = 'https://maven.aliyun.com/repository/public' }
+          maven { url = 'https://maven.aliyun.com/repository/google' }
+      }
+  }
+  ```
+  作用范围是**本机所有 Gradle 项目**，仓库里 `settings.gradle.kts` 保持干净。
+- **装机包**：JDK 走清华 Adoptium 镜像、Gradle 走华为云 `mirrors.huaweicloud.com/gradle/`、cmdline-tools 走 `dl.google.com`（可直连）。
+- **校验**：Gradle 官方 SHA-256 `20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78`（下载中断续传后必须重算，别信 `size_download`）。
+
 ## 版本组合与应急旋钮
 
 主推组合（写死在 `gradle/libs.versions.toml`）：JDK 17 · Gradle Wrapper 8.13 · AGP 8.13.0 · Kotlin 2.2.20 · Compose BOM 2026.05.01 · minSdk 26 / compileSdk & targetSdk 36。
@@ -35,7 +92,8 @@ Git Bash 下把 `gradlew.bat` 换成 `./gradlew`。
 2. 报依赖解析失败（`Could not find androidx.xxx`）→ 到 Google Maven 查该库最新稳定版替换（AndroidX 差一两个小版本不影响构建）。
 3. 报 `Unsupported class file major version` → Gradle 用的 JDK 不是 17（检查 `JAVA_HOME` 或会话内 java 绝对路径）。
 4. 玄学错误 → `gradlew.bat --stop` 后加 `--refresh-dependencies` 重试。
-5. 依赖下载卡住 → `settings.gradle.kts` 加阿里云镜像（见 `docs/README.md`「国内网络」）。
+5. 依赖下载卡住 / 报连不上 `github.com` → **不要在仓库里改 `settings.gradle.kts`**，改用机器级 `C:\Users\JF\.gradle\init.d\mirrors.gradle` 注入阿里云镜像（见上文「国内网络」）。
+6. `sdkmanager` 安装报 `Error on ZipFile unknown archive` → 删除 `D:\Android\sdk\.temp\` 与半装的包目录，**分包重装**（一个包的 zip 坏掉会连累同批后续包）。
 
 ## 传感器 / 服务调试
 
@@ -46,6 +104,13 @@ Git Bash 下把 `gradlew.bat` 换成 `./gradlew`。
 
 | 日期 | 现象 | 根因 | 解决 |
 |---|---|---|---|
+| 2026-09-28 | 新机上 `D:\Java` / `D:\Android` 全不存在，无 `JAVA_HOME`/`ANDROID_HOME`，`local.properties` 也没有 | **用户更换了电脑**（新机从未装过 Android 构建环境） | 按本节「环境安装流程」在新机从零装一遍；实测落点与旧机一致 |
+| 2026-09-28 | `gradlew --version` 报连不上 `github.com`；`compileDebugKotlin` 报 `Could not download kotlin-compiler-embeddable-2.2.20.jar ... Connect to github.com:443 failed` | **本机到 github.com 的连接超时**；`services.gradle.org` 与 Maven Central 的该构件都会 **301 重定向到 GitHub** | JDK / Gradle 发行版从国内镜像下载（清华 Adoptium / 华为云 Gradle）；依赖走**机器级 init 脚本** `C:\Users\JF\.gradle\init.d\mirrors.gradle` 注入阿里云仓库（见「国内网络」） |
+| 2026-09-28 | `sdkmanager` 安装 `platforms;android-36` 报 `Error on ZipFile unknown archive`，且**同批次后面的 platform-tools 一起没装上** | HTTP 下载的 zip 损坏；sdkmanager 整批安装时一个包失败会影响后续包 | 删掉 `D:\Android\sdk\.temp\` 与半装的 `platforms\android-36`，**分包重装**（先 platform-tools，再 platforms;android-36），第二次成功 |
+| 2026-09-28 | 用 `curl -C -` 续传后 `sha256sum` 与官方不符 | 首次下载未完成（`size_download` 小于 `Content-Length`） | 续传后**必须再校验**：`sha256sum gradle-8.13-bin.zip` 应等于官方 `20f1b117...ed78` |
+| 2026-09-28 | cmdline-tools 19.0 里找不到文档提到的 `android.exe` | 该新 CLI 属另一发行渠道，19.0 只有 `sdkmanager.bat` | 直接用 `sdkmanager.bat --install <包>`（等价功能） |
+| 2026-09-28 | 免安装版 Gradle 解压后是 `D:\Android\gradle-8.13\gradle-8.13\bin\gradle.bat`（多一层） | zip 内顶层目录名与解压目标同名 | 解压后把内层内容上移一层，整理成 `D:\Android\gradle-8.13\bin\gradle.bat`，与文档一致 |
+| 2026-09-28 | 仓库路径在两台机器上不同（旧机 `D:\Code\own-project\metro-stop`、新机 `D:\Code\home\own-project\metro-stop`） | **用户有两台开发机**，不是目录被移动 | 文档一律**不写死仓库路径**，以 `git rev-parse --show-toplevel` 为准；命令示例用 `$REPO` 占位 |
 | 2026-09-25 | 本机无 `java` / `ANDROID_HOME` / `adb` | 未安装 Android 构建环境 | S1 按 `docs/README.md`「自举环境」安装 |
 | 2026-09-25 | Git Bash 里 `java` / `adb` / `gradle` 找不到，PowerShell 里正常 | AI 会话环境变量在启动时快照，之后设置的读不到 | 用绝对路径调用；跑 gradlew 前先 `export JAVA_HOME='D:\Java\jdk-17.0.20.1+1'` |
 | 2026-09-25 | `android.exe sdk install` 装的包落到 `C:\Users\JF\AppData\Local\Android\Sdk`，不在 `D:\Android\sdk` | 新 CLI 未读 `ANDROID_HOME`（或读的是默认位置） | 设置 `ANDROID_HOME=D:\Android\sdk` 后重装；已装的用 `mv` 移过去 |
