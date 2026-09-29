@@ -48,6 +48,7 @@ object LabScenarios {
         Scenario("enter_ride_stand", "乘车·站姿握扶手", Group.TRAIN),
         Scenario("enter_ride_walk", "车厢内走动", Group.TRAIN),
         Scenario("enter_train_stop", "列车进站停稳（在车上）", Group.TRAIN),
+        Scenario("enter_train_depart", "乘车·车启动时点", Group.TRAIN),
         // ---- 其他 ----
         Scenario("enter_transfer", "换乘过程（下车→通道→候车）", Group.OTHER),
         Scenario("enter_exit", "出站步行", Group.OTHER),
@@ -55,6 +56,21 @@ object LabScenarios {
 
     /** 通知兜底按钮（无场景名）与旧版数据的落盘 detail */
     const val GENERIC_MARK = "generic"
+
+    /**
+     * 通勤精简模式可见的场景（2026-09-30 用户提出）：主通道实测期的采集只消费两类标记——
+     * 「列车进站停稳」（站区学习 / 合并 / 验收真值）与「车启动时点」（列车启动锚点）；
+     * 其余场景为 lab-data-collection 标定时代服务，判定逻辑已不再消费，精简模式隐藏防误点。
+     * 仅影响 UI 可见性，标记落盘格式与场景 id 不变。
+     */
+    val COMMUTE_MARK_IDS: Set<String> = setOf(
+        "enter_train_stop",
+        "enter_train_depart",
+    )
+
+    /** 通勤精简模式下的可见场景（保持 [ALL] 原顺序；关闭时返回全部） */
+    fun visible(commuteMode: Boolean): List<Scenario> =
+        if (commuteMode) ALL.filter { it.id in COMMUTE_MARK_IDS } else ALL
 
     val byId: Map<String, Scenario> = ALL.associateBy { it.id }
 }

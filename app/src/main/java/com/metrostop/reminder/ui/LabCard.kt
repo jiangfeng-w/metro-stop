@@ -10,12 +10,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +45,8 @@ fun LabCard(
     modifier: Modifier = Modifier,
 ) {
     var showHelp by remember { mutableStateOf(false) }
+    // 通勤精简模式（UI 局部状态，不持久化）：只显示 停稳/乘车 标记，防通勤途中误点
+    var commuteMode by rememberSaveable { mutableStateOf(false) }
     val currentName = state.currentScenario?.let { LabScenarios.byId[it]?.name ?: it }
 
     Card(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -87,9 +91,22 @@ fun LabCard(
             }
 
             if (state.running) {
+                // ---- 通勤精简开关：只显示 停稳/乘车 两类标记（2026-09-30 用户提出，防误点）----
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "通勤精简（只显示 停稳 / 乘车）",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Switch(checked = commuteMode, onCheckedChange = { commuteMode = it })
+                }
                 // ---- 场景清单（= 采集操作清单）：分组逐项标记 ----
                 LabScenarios.Group.entries.forEach { group ->
-                    val items = LabScenarios.ALL.filter { it.group == group }
+                    val items = LabScenarios.visible(commuteMode).filter { it.group == group }
+                    if (items.isEmpty()) return@forEach
                     Text(
                         group.label,
                         style = MaterialTheme.typography.labelLarge,
