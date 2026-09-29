@@ -145,6 +145,23 @@ class Notifier(
                 )
             }
 
+            DetectorEventType.ALERT_DEST_SOON -> {
+                vibrateAlert()
+                post(
+                    Notifications.ID_DEST_SOON,
+                    buildAlert(
+                        alertChannel(),
+                        context.getString(R.string.notif_dest_soon_title),
+                        // 高德句式（M2 终稿同源）：进目的站区即发（早于停稳 0~58 s）；站名兜底是总纲红线
+                        context.getString(
+                            R.string.notif_dest_soon_text,
+                            event.stationName ?: state.destinationStation ?: "-",
+                        ),
+                        high = true,
+                    ),
+                )
+            }
+
             DetectorEventType.ALERT_ARRIVED -> {
                 vibrateAlert()
                 post(

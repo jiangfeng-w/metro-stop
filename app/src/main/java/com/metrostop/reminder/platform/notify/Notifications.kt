@@ -26,6 +26,7 @@ object Notifications {
 
     const val ID_ONGOING = 1010
     const val ID_PREV = 1020
+    const val ID_DEST_SOON = 1025
     const val ID_ARRIVED = 1030
     const val ID_OVERSHOOT = 1040
     const val ID_ERROR = 1050

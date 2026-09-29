@@ -43,6 +43,8 @@ data class TickOutcome(
  * - **目的站兜底**：进目的站区后 `zoneArrivalFallbackSec` 仍无静稳计数（用户走动噪声）→ 产生到站候选；
  * - **D−1 提前**：进入目的站前一站的站区即发 ALERT_PREV（比停稳计数早 0~58 s；**仅主通道
  *   `cellZoneGateEnabled` 开时生效**，影子模式不发）。
+ * - **即将到站**：进入目的站站区（且不与 D−1 站共享小区区）即发 ALERT_DEST_SOON「即将到达
+ *   X，请准备下车」（比停稳早 0~58 s，进区去重一次；仅主通道生效；2026-09-29 用户提出）。
  */
 class MonitorSession(
     val route: RouteSpec,
@@ -63,6 +65,7 @@ class MonitorSession(
 
     private var scheduledEndAtMs: Long? = null
     private var alertPrevSent = false
+    private var alertDestSoonSent = false
     private var alertArrivedSent = false
     private var overshootSent = false
     private var lastCountedMs = 0L
@@ -94,6 +97,7 @@ class MonitorSession(
         stationCount = 0
         arrived = false
         alertPrevSent = false
+        alertDestSoonSent = false
         alertArrivedSent = false
         overshootSent = false
         lastCountedMs = 0L
@@ -132,9 +136,25 @@ class MonitorSession(
                     if (config.cellZoneGateEnabled && route.stopCount > 1 && (route.stopCount - 1) in range) {
                         emitPreAlert(tr.tMs)?.let { out += it }
                     }
-                    // 目的站兜底计时起点（进区早于停稳 0~58 s，故以进区为锚）
-                    if (route.stopCount in range && stationCount < route.stopCount) {
+                    // 目的站区进入：兜底锚点与「即将到站」提醒都**仅独占目的站区**生效——
+                    // 共享区（同时覆盖 D−1 站，实测 4 号线 701 区覆盖市二医院+太升南路）的进区
+                    // 发生在 D−1 站进近段，锚在那里会让 50 s 兜底提前 ~2 min 抢发到站；共享区
+                    // 依赖原始 IMU 检测 + 进区瞬间的 D−1 提醒 + 人工兜底。
+                    if (route.stopCount in range && stationCount < route.stopCount &&
+                        (route.stopCount - 1) !in range
+                    ) {
                         destZoneAtMs = tr.tMs
+                        // 「即将到站」提醒（通用文案，2026-09-29 用户提出；进区去重一次）
+                        if (config.cellZoneGateEnabled && !arrived && !alertDestSoonSent) {
+                            alertDestSoonSent = true
+                            out += DetectorEvent(
+                                tMs = tr.tMs,
+                                type = DetectorEventType.ALERT_DEST_SOON,
+                                stationIndex = route.destinationIndex,
+                                stationName = route.destinationStation.name,
+                                note = "dest_zone_entered range=${range.first}..${range.last}",
+                            )
+                        }
                     }
                 }
 
@@ -509,6 +529,7 @@ class MonitorSession(
             // 退回未到站状态：撤销自动结束并允许后续提醒重新计算
             arrived = false
             scheduledEndAtMs = null
+            alertDestSoonSent = false
             if (stationCount < route.stopCount) alertArrivedSent = false
             if (stationCount < route.stopCount - 1) alertPrevSent = false
         }

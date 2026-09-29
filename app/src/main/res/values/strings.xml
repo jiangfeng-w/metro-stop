@@ -69,6 +69,8 @@
     <string name="notif_idle_text">未在监测</string>
     <string name="notif_prev_title">准备下车</string>
     <string name="notif_prev_text">下一站 %1$s，请准备下车。</string>
+    <string name="notif_dest_soon_title">即将到站</string>
+    <string name="notif_dest_soon_text">即将到达 %1$s，请准备下车。</string>
     <string name="notif_arrived_title">已到站：%1$s</string>
     <string name="notif_arrived_text">请下车。</string>
     <string name="notif_overshoot_title">可能坐过站</string>

@@ -51,6 +51,16 @@ class MonitorSessionGateFallbackTest {
         ),
     )
 
+    /** 共享区变体：两站共用 100:100（对应实测 4 号线 701 区一段覆盖市二医院+太升南路） */
+    private fun zoneLineShared() = CellZoneLine(
+        lineId = "cd4",
+        directionId = "cd4_to_wansheng",
+        stations = listOf(
+            CellZoneStation("cd4_s21", listOf("100:100")),
+            CellZoneStation("cd4_s20", listOf("100:100")),
+        ),
+    )
+
     private class Run(
         val session: MonitorSession,
         val events: List<DetectorEvent>,
@@ -60,12 +70,17 @@ class MonitorSessionGateFallbackTest {
     /**
      * 时间线（证据门要求首个候选前 150 s 窗内 ≥48% 乘车带，故巡航段 ≥100 s）：
      * 巡航 104 s → 进区确认（小区流 3 拍，实测进区早于停稳 0~58 s）→ 停站1 静稳 10 s
-     * → 巡航 110 s（小区流静默超活性窗口）→ 停站2 静稳 10 s（gate 已过期 → 必须走 v3）。
+     * → 巡航 110 s（默认小区流静默超活性窗口）→ 停站2 静稳 10 s（gate 已过期 → 必须走 v3）。
+     * `destCells=true` 时在巡航段重新喂目的站小区（进目的站区 → 触发 ALERT_DEST_SOON）。
      */
-    private fun drive(feedCells: Boolean): Run {
+    private fun drive(
+        feedCells: Boolean,
+        destCells: Boolean = false,
+        sharedZone: Boolean = false,
+    ): Run {
         val t0 = 100_000L
         val config = TuningConfig.Default.copy(cellZoneGateLivenessSec = 60.0)
-        val session = MonitorSession(cd4Route(), config, zoneLine())
+        val session = MonitorSession(cd4Route(), config, if (sharedZone) zoneLineShared() else zoneLine())
         val events = ArrayList<DetectorEvent>()
         events += session.start(t0).events
 
@@ -84,8 +99,14 @@ class MonitorSessionGateFallbackTest {
             }
         }
         feed(t0 + 108_000L, t0 + 117_000L, vib = 0.005f) // 停站 1：gate 活性期内静稳计数
-        feed(t0 + 118_000L, t0 + 227_000L, vib = 0.3f) // 巡航 110 s，小区流静默 > 活性窗口
-        feed(t0 + 228_000L, t0 + 237_000L, vib = 0.005f) // 停站 2：gate 已过期 → 必须走 v3
+        feed(t0 + 118_000L, t0 + 124_000L, vib = 0.3f) // 离站巡航
+        if (destCells) {
+            repeat(3) { i ->
+                events += session.onCellSample(t0 + 125_000L + 1000L * i, "200:200", emptyList())
+            }
+        }
+        feed(t0 + 125_000L, t0 + 227_000L, vib = 0.3f) // 巡航（小区流静默 > 活性窗口，除非 destCells）
+        feed(t0 + 228_000L, t0 + 237_000L, vib = 0.005f) // 停站 2
         return Run(session, events, t0)
     }
 
@@ -121,6 +142,33 @@ class MonitorSessionGateFallbackTest {
         assertEquals(2, arrivals.size)
         assertTrue(events(run, DetectorEventType.ZONE_CONFIRMED).isEmpty())
         assertTrue(events(run, DetectorEventType.ZONE_SUPPRESSED).isEmpty())
+        assertTrue(events(run, DetectorEventType.ALERT_ARRIVED).isNotEmpty())
+    }
+
+    @Test
+    fun `dest_进入独占目的站区_发即将到站提醒`() {
+        val run = drive(feedCells = true, destCells = true)
+        val destSoon = events(run, DetectorEventType.ALERT_DEST_SOON)
+
+        assertEquals("两站都应计数", 2, run.session.stationCount)
+        assertEquals("进目的站区去重，恰好一条", 1, destSoon.size)
+        assertEquals("提醒面向目的站", "太升南路", destSoon[0].stationName)
+        assertTrue(events(run, DetectorEventType.ALERT_PREV).isNotEmpty())
+        assertTrue(events(run, DetectorEventType.ALERT_ARRIVED).isNotEmpty())
+    }
+
+    @Test
+    fun `dest_共享目的站区_跳过即将到站避免与D-1重复`() {
+        val run = drive(feedCells = true, sharedZone = true)
+
+        assertEquals("共享区靠原始检测 + 人工兜底仍应计满 2 站", 2, run.session.stationCount)
+        assertTrue(
+            "共享区不得发「即将到站」（进区瞬间 D−1 已同点触发）: ${
+                events(run, DetectorEventType.ALERT_DEST_SOON)
+            }",
+            events(run, DetectorEventType.ALERT_DEST_SOON).isEmpty(),
+        )
+        assertTrue(events(run, DetectorEventType.ALERT_PREV).isNotEmpty())
         assertTrue(events(run, DetectorEventType.ALERT_ARRIVED).isNotEmpty())
     }
 
