@@ -18,8 +18,9 @@
     <string name="btn_start">开始监测</string>
     <string name="btn_stop">结束监测</string>
     <string name="btn_test_alert">测试提醒</string>
-    <string name="btn_correct_up">我已多过一站（＋1）</string>
+    <string name="btn_correct_up">漏计一站（＋1）</string>
     <string name="btn_correct_down">多算了一站（−1）</string>
+    <string name="hint_pick_route">请先选好线路、方向、上车站与目的站</string>
     <string name="btn_export_hint">导出日志</string>
     <string name="export_hint_text">CSV 存于：\n%1$s\n\n电脑上执行：\nadb pull /sdcard/Android/data/com.metrostop.reminder/files/logs .\\logs</string>
 
@@ -60,24 +61,28 @@
     <string name="setting_alert_vib">仅震动</string>
     <string name="setting_record">记录 CSV</string>
 
-    <!-- 通知 -->
-    <string name="notif_ongoing_title">当前 %1$s</string>
-    <string name="notif_ongoing_arrived_title">已到达目的站</string>
-    <string name="notif_ongoing_text">下一站 %1$s · 剩 %2$d / %3$d 站</string>
+    <!-- 通知（M2 文案终稿 2026-09-29：导航简洁风；D−1 句式取高德「下一站：X，请准备下车」并保留站名兜底） -->
+    <string name="notif_ongoing_title">距下车还有 %1$d 站</string>
+    <string name="notif_ongoing_arrived_title">已到站：%1$s</string>
+    <string name="notif_ongoing_arrived_text">请下车。</string>
+    <string name="notif_ongoing_text">下一站 %1$s · 全程 %2$d 站</string>
     <string name="notif_idle_text">未在监测</string>
-    <string name="notif_prev_title">请准备下车</string>
-    <string name="notif_prev_text">下一站就是 %1$s（当前 %2$s），请准备下车。</string>
-    <string name="notif_arrived_title">已到站</string>
-    <string name="notif_arrived_text">已到达 %1$s，请下车。</string>
-    <string name="notif_overshoot_title">可能已坐过站</string>
-    <string name="notif_overshoot_text">您可能已坐过 %1$s，请立即确认或返程。</string>
-    <string name="notif_gap_title">传感器数据中断</string>
-    <string name="notif_gap_text">检测到采样断流，已重新预热；期间到站可能漏计，请注意核对站名。</string>
+    <string name="notif_prev_title">准备下车</string>
+    <string name="notif_prev_text">下一站 %1$s，请准备下车。</string>
+    <string name="notif_arrived_title">已到站：%1$s</string>
+    <string name="notif_arrived_text">请下车。</string>
+    <string name="notif_overshoot_title">可能坐过站</string>
+    <string name="notif_overshoot_text">已过 %1$s，可在下一站 %2$s 下车折返。</string>
+    <string name="notif_overshoot_text_fallback">已过 %1$s，请立即确认或返程。</string>
+    <string name="notif_gap_title">传感器断流</string>
+    <string name="notif_gap_text">采样中断已自动恢复；期间可能漏计，请核对站名。</string>
     <string name="notif_error_title">监测未能启动</string>
     <string name="notif_test_title">测试提醒</string>
-    <string name="notif_test_text">如果您看到本条通知且手机震动，说明提醒链路正常。</string>
+    <string name="notif_test_text">看到本条通知且手机震动，说明提醒链路正常。</string>
+    <string name="notif_end_title">监测已结束</string>
+    <string name="notif_end_text">本次共 %1$d 站 · 用时 %2$s</string>
     <string name="action_stop">结束</string>
-    <string name="action_missed_one">我已多过一站</string>
+    <string name="action_missed_one">漏计一站（＋1）</string>
 
     <!-- 磁贴 -->
     <string name="tile_label">到站了</string>

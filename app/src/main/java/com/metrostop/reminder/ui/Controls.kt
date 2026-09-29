@@ -12,7 +12,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.metrostop.reminder.R
 import com.metrostop.reminder.core.model.MonitorUiState
 
 /** 主按钮区：开始 ⇄ 结束；副：测试提醒 / ±1 纠错（总纲第八节） */
@@ -30,21 +32,29 @@ fun Controls(
     Card(modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (state.running) {
-                Button(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("结束监测") }
+                Button(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.btn_stop))
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onCorrectUp, modifier = Modifier.weight(1f)) { Text("我已多过一站（＋1）") }
-                    OutlinedButton(onClick = onCorrectDown, modifier = Modifier.weight(1f)) { Text("多算了一站（−1）") }
+                    OutlinedButton(onClick = onCorrectUp, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.btn_correct_up))
+                    }
+                    OutlinedButton(onClick = onCorrectDown, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.btn_correct_down))
+                    }
                 }
             } else {
                 Button(
                     onClick = onStart,
                     enabled = canStart,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("开始监测") }
-                OutlinedButton(onClick = onTest, modifier = Modifier.fillMaxWidth()) { Text("测试提醒") }
+                ) { Text(stringResource(R.string.btn_start)) }
+                OutlinedButton(onClick = onTest, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.btn_test_alert))
+                }
             }
             if (!state.running && !canStart) {
-                Text("请先选好线路、方向、上车站与目的站", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.hint_pick_route), style = MaterialTheme.typography.bodySmall)
             }
         }
     }

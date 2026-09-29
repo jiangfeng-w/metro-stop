@@ -122,6 +122,9 @@ class MonitorService : Service() {
     /** 常驻通知「内容签名」：与上次相同则跳过 notify（UI 上报去重，2026-09-27 ui-jank-diagnosis） */
     private var lastNotifSignature: String? = null
 
+    /** 结束通知防重：一次会话只发一条（自动结束路径 tick 已置 running=false，不能按 running 判） */
+    private var endNotified = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -253,6 +256,11 @@ class MonitorService : Service() {
 
     private fun beginMonitoring(lineId: String, dirId: String, boardId: String, destId: String) {
         if (isRunning) return
+        // 新会话开始：清掉上一趟残留的「监测已结束」卡片，避免与新会话混淆
+        endNotified = false
+        runCatching {
+            androidx.core.app.NotificationManagerCompat.from(this).cancel(Notifications.ID_END)
+        }
         val repo = loadRoutes()
         val route: RouteSpec? = repo?.buildRoute(lineId, dirId, boardId, destId)
         if (route == null) {
@@ -430,9 +438,16 @@ class MonitorService : Service() {
 
     private fun stopMonitoring(reason: String) {
         val s = session
-        if (s != null && s.running) {
-            val outcome = s.finish(SystemClock.elapsedRealtime(), reason)
-            for (e in outcome.events) recorder?.onEvent(e)
+        if (s != null && !endNotified) {
+            endNotified = true
+            val elapsedSec = s.snapshot(SystemClock.elapsedRealtime()).elapsedSec
+            if (s.running) {
+                val outcome = s.finish(SystemClock.elapsedRealtime(), reason)
+                for (e in outcome.events) recorder?.onEvent(e)
+            }
+            // M2 结束通知：手动 / 数满自动 / 90 min 兜底统一收尾反馈
+            //（error 路径走 failAndStop，不经此处；自动结束路径 tick 已把 running 置 false）
+            notifier.notifyEnd(s.stationCount, elapsedSec)
         }
         teardown(clearState = true)
         stopForeground(STOP_FOREGROUND_REMOVE)

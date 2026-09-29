@@ -32,6 +32,9 @@ object Notifications {
     const val ID_TEST = 1060
     const val ID_KEEPALIVE = 1070
 
+    /** 结束收尾通知（M2）：复用 ongoing 渠道（LOW），不新建渠道、不改任何渠道属性 */
+    const val ID_END = 1080
+
     fun ensureChannels(context: Context) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 

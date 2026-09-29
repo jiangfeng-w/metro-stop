@@ -62,17 +62,22 @@ class Notifier(
                 .build()
         }
 
+        // M2 文案终稿：标题从「当前站」改为「距下车还有 N 站」（高德锁屏「还有 1 站到站」同构），
+        // 到站态正文改为动作指令「请下车。」
         val title = if (state.arrived) {
-            context.getString(R.string.notif_ongoing_arrived_title)
+            context.getString(R.string.notif_ongoing_arrived_title, state.destinationStation ?: "-")
         } else {
-            context.getString(R.string.notif_ongoing_title, state.currentStation ?: "-")
+            context.getString(R.string.notif_ongoing_title, state.remaining)
         }
-        val text = context.getString(
-            R.string.notif_ongoing_text,
-            state.nextStation ?: "-",
-            state.remaining,
-            state.totalStops,
-        )
+        val text = if (state.arrived) {
+            context.getString(R.string.notif_ongoing_arrived_text)
+        } else {
+            context.getString(
+                R.string.notif_ongoing_text,
+                state.nextStation ?: "-",
+                state.totalStops,
+            )
+        }
         // chronometer 以 wall clock 起算：用「当前时间 − 已运行时长」反推开始时刻
         val startedAtWallClock = System.currentTimeMillis() - (state.elapsedSec * 1000).toLong()
         return b.setContentTitle(title)
@@ -130,10 +135,10 @@ class Notifier(
                     buildAlert(
                         alertChannel(),
                         context.getString(R.string.notif_prev_title),
+                        // 高德句式（M2 终稿）：下一站 + 动作指令；站名兜底是总纲红线
                         context.getString(
                             R.string.notif_prev_text,
                             event.stationName ?: state.destinationStation ?: "-",
-                            state.currentStation ?: "-",
                         ),
                         high = true,
                     ),
@@ -146,8 +151,11 @@ class Notifier(
                     Notifications.ID_ARRIVED,
                     buildAlert(
                         alertChannel(),
-                        context.getString(R.string.notif_arrived_title),
-                        context.getString(R.string.notif_arrived_text, event.stationName ?: state.destinationStation ?: "-"),
+                        context.getString(
+                            R.string.notif_arrived_title,
+                            event.stationName ?: state.destinationStation ?: "-",
+                        ),
+                        context.getString(R.string.notif_arrived_text),
                         high = true,
                     ),
                 )
@@ -155,12 +163,23 @@ class Notifier(
 
             DetectorEventType.OVERSHOOT -> {
                 vibrateAlert()
+                // 过站后带「下一站可折返」（M2 终稿，可操作化）；下一站缺失时回退保守文案
+                val next = state.nextStation
+                val text = if (next != null) {
+                    context.getString(
+                        R.string.notif_overshoot_text,
+                        event.stationName ?: "-",
+                        next,
+                    )
+                } else {
+                    context.getString(R.string.notif_overshoot_text_fallback, event.stationName ?: "-")
+                }
                 post(
                     Notifications.ID_OVERSHOOT,
                     buildAlert(
                         alertChannel(),
                         context.getString(R.string.notif_overshoot_title),
-                        context.getString(R.string.notif_overshoot_text, event.stationName ?: "-"),
+                        text,
                         high = true,
                         actions = false,
                     ),
@@ -213,6 +232,37 @@ class Notifier(
                 actions = false,
             ),
         )
+    }
+
+    /**
+     * 结束收尾通知（M2）：手动 / 数满自动 / 90 min 兜底结束统一反馈，让用户明确知道监测真的停了。
+     * 复用 ongoing 渠道（LOW，无震动），autoCancel、无动作按钮；error 路径（[notifyError]）不发本条。
+     */
+    fun notifyEnd(stationCount: Int, elapsedSec: Double) {
+        post(
+            Notifications.ID_END,
+            NotificationCompat.Builder(context, Notifications.CH_ONGOING)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(context.getString(R.string.notif_end_title))
+                .setContentText(
+                    context.getString(R.string.notif_end_text, stationCount, formatDuration(elapsedSec)),
+                )
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_STATUS)
+                .setContentIntent(pi(RC_OPEN_APP, ACTION_OPEN_APP))
+                .build(),
+        )
+    }
+
+    private fun formatDuration(sec: Double): String {
+        val total = sec.toInt().coerceAtLeast(0)
+        val h = total / 3600
+        val m = (total % 3600) / 60
+        return when {
+            h > 0 -> "$h 小时 $m 分"
+            m > 0 -> "$m 分钟"
+            else -> "不足 1 分钟"
+        }
     }
 
     private fun vibrateAlert() = runCatching { vibrator.vibrateAlert() }
