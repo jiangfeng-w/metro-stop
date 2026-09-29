@@ -38,7 +38,8 @@ data class TickOutcome(
  * - **重同步**：站区首站位 > 期望位（前一站被漏检）→ 候选直接对齐到站区首站位，防级联失步；
  * - **侦察补检**：区内放宽静稳（`zoneStillVibTh`/`zoneStillConfirmSec`）补检原始阈值下的静默漏检站；
  * - **目的站兜底**：进目的站区后 `zoneArrivalFallbackSec` 仍无静稳计数（用户走动噪声）→ 产生到站候选；
- * - **D−1 提前**：进入目的站前一站的站区即发 ALERT_PREV（比停稳计数早 0~58 s）。
+ * - **D−1 提前**：进入目的站前一站的站区即发 ALERT_PREV（比停稳计数早 0~58 s；**仅主通道
+ *   `cellZoneGateEnabled` 开时生效**，影子模式不发）。
  */
 class MonitorSession(
     val route: RouteSpec,
@@ -117,8 +118,9 @@ class MonitorSession(
                         stationName = zoneDisplayName(range),
                         note = "range=${range.first}..${range.last}",
                     )
-                    // D−1 提前提醒（评审 P4 定稿）：进入目的站前一站的站区、驻留确认即发
-                    if (route.stopCount > 1 && (route.stopCount - 1) in range) {
+                    // D−1 提前提醒（评审 P4 定稿）：进入目的站前一站的站区、驻留确认即发。
+                    // 仅主通道（gate 开）生效——影子模式须与 v3 判定完全一致（2026-09-29 用户拍板 gate）
+                    if (config.cellZoneGateEnabled && route.stopCount > 1 && (route.stopCount - 1) in range) {
                         emitPreAlert(tr.tMs)?.let { out += it }
                     }
                     // 目的站兜底计时起点（进区早于停稳 0~58 s，故以进区为锚）

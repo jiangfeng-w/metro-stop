@@ -159,7 +159,11 @@ class RealCommuteMorningRegressionTest {
 
     @Test
     fun `晚通勤_无映射方向_降级不劣化`() {
-        // cd6_to_lanjiagou 方向无映射 → 跟踪器不激活 → v3 基线 12/12 保持
+        // 验证「无映射方向」降级：跟踪器不激活 → v3 基线 12/12 保持。
+        // cd6_to_lanjiagou 自 2026-09-29 晚已落表（学习第 2 趟），故显式置空模拟仍无映射的方向
+        // （如 cd4_to_xihe）。⚠️ 本用例曾暴露一个切主通道前必须解决的缺口：gate 开 + 有映射 +
+        // 小区流缺席（cellCsv=null 模拟采集失败）→ 全部候选被站区门拦为 ZONE_SUPPRESSED（0 计数），
+        // 需补「小区流缺席/断流 → bypass gate 走 v3」降级并配回归。
         val route = RouteSpec.of(
             repo.line("cd6")!!,
             repo.direction("cd6", "cd6_to_lanjiagou")!!,
@@ -171,7 +175,7 @@ class RealCommuteMorningRegressionTest {
             route,
             v4Config,
             cellCsv = null,
-            zoneLine = zoneMap.forRoute(route),
+            zoneLine = null,
         )
         assertEquals(12, result.finalStationCount)
         assertTrue(result.events.any { it.type == DetectorEventType.ALERT_PREV })
