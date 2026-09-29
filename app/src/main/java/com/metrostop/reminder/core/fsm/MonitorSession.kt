@@ -32,8 +32,11 @@ data class TickOutcome(
  *   且纠错时刻更新间隔门槛锚点 lastCountedMs；最长 90 分钟兜底结束。
  *
  * v4 融合层（cell-zone-detector-v4，蜂窝回答「在哪」、IMU 回答「停没停」）：
- * - `zoneLine` 非空时启用站区跟踪；两个开关（`cellZoneGateEnabled` / `cellZoneScoutEnabled`）
- *   默认 false = **影子模式**（跟踪器照常记录 ZONE_* 事件，判定行为与 v3 完全一致）；
+ * - `zoneLine` 非空时启用站区跟踪；两开关（`cellZoneGateEnabled` / `cellZoneScoutEnabled`）
+ *   默认 true = **主通道**（2026-09-29 用户拍板提前切换）；显式 copy(false) = 影子模式
+ *   （跟踪器照常记录 ZONE_* 事件，判定行为与 v3 完全一致）；
+ * - **活性回退**：最近一次 ZONE 转移超过 `cellZoneGateLivenessSec`（小区流缺席 / 断流 /
+ *   映射失配）→ gate 自动旁路，判定回退 v3——不会出现「gate 开 + 小区流死 → 0 计数」；
  * - **站区门**：到站候选必须落在包含期望下一站的站区，否则 ZONE_SUPPRESSED（信号停车免疫）；
  * - **重同步**：站区首站位 > 期望位（前一站被漏检）→ 候选直接对齐到站区首站位，防级联失步；
  * - **侦察补检**：区内放宽静稳（`zoneStillVibTh`/`zoneStillConfirmSec`）补检原始阈值下的静默漏检站；
@@ -76,6 +79,9 @@ class MonitorSession(
     /** 进入目的站区的时刻（>0 = 兜底计时中） */
     private var destZoneAtMs = 0L
 
+    /** 最近一次 ZONE 转移时刻（站区门活性锚点；0 = 从未有过区转移） */
+    private var lastZoneEventMs = 0L
+
     val state get() = detector.state
     val dataGapCount get() = detector.dataGapCount
 
@@ -96,6 +102,7 @@ class MonitorSession(
         zoneStillStartMs = 0L
         zoneStillLastMs = 0L
         destZoneAtMs = 0L
+        lastZoneEventMs = 0L
         val events = ArrayList<DetectorEvent>(detector.start(nowMs))
         return TickOutcome(events = events)
     }
@@ -110,6 +117,8 @@ class MonitorSession(
         for (tr in zoneTracker.onCell(tMs, mainCell, neighbors)) {
             when (tr) {
                 is ZoneTransition.Entered -> {
+                    // 进区/退区都刷新活性锚点：gate 只在「小区流近期确实产出过区转移」时生效
+                    lastZoneEventMs = tr.tMs
                     val range = tr.range
                     out += DetectorEvent(
                         tMs = tr.tMs,
@@ -130,6 +139,7 @@ class MonitorSession(
                 }
 
                 is ZoneTransition.Exited -> {
+                    lastZoneEventMs = tr.tMs
                     out += DetectorEvent(
                         tMs = tr.tMs,
                         type = DetectorEventType.ZONE_EXITED,
@@ -268,6 +278,10 @@ class MonitorSession(
         )
     }
 
+    /** 站区门活性：最近一次 ZONE 转移在窗口内才启用 gate；小区流缺席/断流 → 自动回退 v3 判定 */
+    private fun gateLive(nowMs: Long): Boolean =
+        lastZoneEventMs != 0L && nowMs - lastZoneEventMs <= (config.cellZoneGateLivenessSec * 1000).toLong()
+
     /**
      * 把物理到站候选翻译成计数与提醒（首站忽略 / 站区门 / 间隔门槛 / 提醒去重）。
      *
@@ -301,9 +315,9 @@ class MonitorSession(
             return out
         }
 
-        // v4 站区门 + 期望站位解析（影子模式 = gate 关，targetPos 保持 stationCount+1）
+        // v4 站区门 + 期望站位解析（活性超时 = 小区流缺席/断流/映射失配 → 整段旁路回退 v3）
         var targetPos = stationCount + 1
-        if (config.cellZoneGateEnabled && zoneTracker.active) {
+        if (config.cellZoneGateEnabled && zoneTracker.active && gateLive(nowMs)) {
             val zone = zoneTracker.confirmedRange
             when {
                 // 区外（未命中任何站区）：区间信号停车 / 上车站内停顿 → 拦截不计数

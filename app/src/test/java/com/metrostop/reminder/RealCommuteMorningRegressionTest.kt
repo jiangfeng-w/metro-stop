@@ -136,19 +136,24 @@ class RealCommuteMorningRegressionTest {
 
     @Test
     fun `早通勤_影子模式降级_等于v3基线`() {
-        // 默认配置（两开关 false）+ 映射在场：判定行为必须与「无 v4」完全一致（红线安全）
+        // 影子模式（显式关闭两开关；2026-09-29 起 Default 已切主通道）+ 映射在场：
+        // 判定行为必须与「无 v4」完全一致（含小区流喂入），只多 ZONE_* 记录事件
+        val shadowConfig = TuningConfig.Default.copy(
+            cellZoneGateEnabled = false,
+            cellZoneScoutEnabled = false,
+        )
         val route = cd6Route()
         val withMapShadow = CsvReplay.replay(
             text("real_commute_cd6_12stops_morning_20260929.csv"),
             route,
-            TuningConfig.Default,
+            shadowConfig,
             cellCsv = text("real_commute_cd6_12stops_morning_cells_20260929.csv"),
             zoneLine = zoneMap.forRoute(route),
         )
         val withoutV4 = CsvReplay.replay(
             text("real_commute_cd6_12stops_morning_20260929.csv"),
             route,
-            TuningConfig.Default,
+            shadowConfig,
         )
         assertEquals(withoutV4.finalStationCount, withMapShadow.finalStationCount)
         assertEquals(
@@ -158,12 +163,11 @@ class RealCommuteMorningRegressionTest {
     }
 
     @Test
-    fun `晚通勤_无映射方向_降级不劣化`() {
-        // 验证「无映射方向」降级：跟踪器不激活 → v3 基线 12/12 保持。
-        // cd6_to_lanjiagou 自 2026-09-29 晚已落表（学习第 2 趟），故显式置空模拟仍无映射的方向
-        // （如 cd4_to_xihe）。⚠️ 本用例曾暴露一个切主通道前必须解决的缺口：gate 开 + 有映射 +
-        // 小区流缺席（cellCsv=null 模拟采集失败）→ 全部候选被站区门拦为 ZONE_SUPPRESSED（0 计数），
-        // 需补「小区流缺席/断流 → bypass gate 走 v3」降级并配回归。
+    fun `晚通勤_有映射但小区流缺席_gate自动回退v3`() {
+        // 2026-09-29 晚 cd6_to_lanjiagou 已落表；本用例语义从「无映射降级」升级为
+        // 「有映射但小区流缺席（cellCsv=null 模拟采集失败 / 无服务）」：gate 从未见过
+        // ZONE 转移 → 活性回退生效 → 判定必须完整回退 v3（12/12），而非 0 计数。
+        // 这是 2026-09-29 夜「gate 开 + 小区流死 → 全程 0 计数」P0 缺口的回归用例。
         val route = RouteSpec.of(
             repo.line("cd6")!!,
             repo.direction("cd6", "cd6_to_lanjiagou")!!,
@@ -175,9 +179,13 @@ class RealCommuteMorningRegressionTest {
             route,
             v4Config,
             cellCsv = null,
-            zoneLine = null,
+            zoneLine = zoneMap.forRoute(route),
         )
         assertEquals(12, result.finalStationCount)
+        assertTrue(
+            "小区流缺席不得产生拦截：${result.events.filter { it.type == DetectorEventType.ZONE_SUPPRESSED }}",
+            result.events.none { it.type == DetectorEventType.ZONE_SUPPRESSED },
+        )
         assertTrue(result.events.any { it.type == DetectorEventType.ALERT_PREV })
         assertTrue(result.events.any { it.type == DetectorEventType.ALERT_ARRIVED })
     }

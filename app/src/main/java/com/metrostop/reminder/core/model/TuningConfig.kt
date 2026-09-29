@@ -187,17 +187,25 @@ data class TuningConfig(
     /**
      * 站区门开关：到站候选（检测器原始 STATION_ARRIVED / 分区侦察补检）必须落在包含
      * 「期望下一站」的站区内才计数，否则记 ZONE_SUPPRESSED——区间信号停车 / 上车站内停顿免疫。
-     * **影子模式（学习期）保持 false**：跟踪器照常运行并记录 ZONE_* 事件，但不参与判定。
+     * **2026-09-29 深夜起默认 true（用户拍板提前切主通道，节前最后一天实测）**；
+     * 影子模式改为显式 copy(false)（见 RealCommuteMorningRegressionTest 影子用例）。
      */
-    val cellZoneGateEnabled: Boolean = false,
+    val cellZoneGateEnabled: Boolean = true,
     /**
      * 站区侦察开关：已确认站区内用**放宽的静稳判据**补检 v3 静默漏检的站
      * （晨高峰停站窗 vib 均值 0.11~0.19，高于全局 vibStopTh=0.085 → 8 s 静稳跨度形不成 → 漏检）。
-     * 误报风险由站区身份兜底（站区只在车站附近出现）。影子模式 false。
+     * 误报风险由站区身份兜底（站区只在车站附近出现）。**2026-09-29 深夜起默认 true（同上）**。
      */
-    val cellZoneScoutEnabled: Boolean = false,
+    val cellZoneScoutEnabled: Boolean = true,
     /** 进区 / 退区驻留确认拍数（cellid 流 ≈1 Hz；实测小区切换到停稳提前 0~58 s） */
     val cellZoneConfirmSamples: Int = 2,
+    /**
+     * 站区门活性窗口：最近一次 ZONE 转移（进区/退区）在此窗口内 gate 才生效；超时视为
+     * 小区流缺席/断流/映射失配 → 判定**自动回退 v3**（防「gate 开 + 小区流死 → 全程 0 计数
+     * 0 提醒」，2026-09-29 晚通勤回归暴露的 P0 缺口）。正常站间 100~201 s 必有区转移刷新
+     * 活性，300 s 留足余量且断流后最多 5 min 恢复 v3 兜底。
+     */
+    val cellZoneGateLivenessSec: Double = 300.0,
     /**
      * 区内放宽静稳阈值：晨高峰停站窗 vib 均值 0.106~0.194（2026-09-29 早通勤 12 站实测），
      * 0.22 覆盖全部停站均值且仍高于站台静立（p50 0.092）与站姿乘车停站的重叠区下限；
