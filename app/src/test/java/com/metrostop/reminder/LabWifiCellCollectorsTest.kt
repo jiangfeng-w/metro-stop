@@ -42,6 +42,36 @@ class LabWifiCellCollectorsTest {
         assertEquals(a, LabWifiCollector.hashBssid("aa:bb:cc:dd:ee:01"))
     }
 
+    // ---------------- LabWifiCollector 扫描节奏 / 事件节流（wifi-collector-fix 回归） ----------------
+
+    @Test
+    fun `扫描请求决策_30秒内不重复请求_满间隔放行`() {
+        // 2026-09-29 早通勤事故回归：回调风暴下 30 s 内绝不重复请求
+        assertFalse(
+            LabWifiCollector.shouldRequestScan(30_000, lastRequestMs = 10_000, minIntervalMs = 30_000),
+        )
+        assertTrue(
+            LabWifiCollector.shouldRequestScan(40_000, lastRequestMs = 10_000, minIntervalMs = 30_000),
+        )
+        // 恰好满间隔 → 放行
+        assertTrue(
+            LabWifiCollector.shouldRequestScan(40_000, lastRequestMs = 10_000, minIntervalMs = 30_000),
+        )
+        // 首次请求（lastRequest=0，运行时 elapsedRealtime 为开机起的大数值）必放行
+        assertTrue(LabWifiCollector.shouldRequestScan(3_600_000, lastRequestMs = 0, minIntervalMs = 30_000))
+    }
+
+    @Test
+    fun `失败事件节流_首次必写_节流窗内静默_满窗再写`() {
+        val th = LabWifiCollector.FAIL_EVENT_THROTTLE_MS
+        // 首次（lastEvent=0）必写
+        assertTrue(LabWifiCollector.shouldWriteFailEvent(1_000, lastEventMs = 0, throttleMs = th))
+        // 窗内静默
+        assertFalse(LabWifiCollector.shouldWriteFailEvent(30_000, lastEventMs = 1_000, throttleMs = th))
+        // 满窗再写
+        assertTrue(LabWifiCollector.shouldWriteFailEvent(61_000, lastEventMs = 1_000, throttleMs = th))
+    }
+
     // ---------------- LabCellCollector 纯函数 ----------------
 
     private fun snap(pci: Int, ci: Long, rssi: Int, registered: Boolean = false) =
