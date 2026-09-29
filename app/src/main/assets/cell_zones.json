@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedAt": "2026-09-29",
-  "note": "学习期自举映射（每方向 rideCount=1，第 1 趟 = 2026-09-29 早通勤）。站区 cell 提取规则（需求 2.1 / 评审 P3）：停稳 MARK 窗 [-15s,+40s] 内驻留 ≥15s 的 pci:ci，进站段小区不入表。置信度低：仅影子模式与回放自洽验证用；跨趟泛化验证通过（每方向 ≥2 趟）后才允许切主通道。",
+  "note": "学习期自举映射（rideCount=1=自举；每方向 ≥2 趟 + 跨趟泛化回放通过后才可切主通道）。cd6_to_wangcongzi / cd4_to_wansheng = 2026-09-29 早通勤；cd6_to_lanjiagou = 2026-09-29 晚通勤。站区 cell 提取规则（需求 2.1 / 评审 P3）：停稳 MARK 窗 [-15s,+40s] 内驻留 ≥15s 的 pci:ci，进站段小区不入表。实测两方向同站小区不同（牛王庙 799:38682599426 vs 853:38682632234），按方向建映射必要。",
   "lines": [
     {
       "lineId": "cd6",
@@ -9,18 +9,80 @@
       "learnedAt": "2026-09-29",
       "rideCount": 1,
       "stations": [
-        { "stationId": "cd6_s37", "cells": ["721:38656778242"] },
-        { "stationId": "cd6_s36", "cells": ["799:38656573441", "905:38656774146"] },
-        { "stationId": "cd6_s35", "cells": ["860:38656569345"] },
-        { "stationId": "cd6_s34", "cells": ["887:38682628098"] },
-        { "stationId": "cd6_s33", "cells": ["792:38682656769"] },
-        { "stationId": "cd6_s32", "cells": ["708:38682619905"] },
-        { "stationId": "cd6_s31", "cells": ["879:38682615810"] },
-        { "stationId": "cd6_s30", "cells": ["751:38682611714"] },
-        { "stationId": "cd6_s29", "cells": ["723:38682607618"] },
-        { "stationId": "cd6_s28", "cells": ["909:38682636289"] },
-        { "stationId": "cd6_s27", "cells": ["799:38682599426"] },
-        { "stationId": "cd6_s26", "cells": ["868:38684602369", "867:38684585986"] }
+        {
+          "stationId": "cd6_s37",
+          "cells": [
+            "721:38656778242"
+          ]
+        },
+        {
+          "stationId": "cd6_s36",
+          "cells": [
+            "799:38656573441",
+            "905:38656774146"
+          ]
+        },
+        {
+          "stationId": "cd6_s35",
+          "cells": [
+            "860:38656569345"
+          ]
+        },
+        {
+          "stationId": "cd6_s34",
+          "cells": [
+            "887:38682628098"
+          ]
+        },
+        {
+          "stationId": "cd6_s33",
+          "cells": [
+            "792:38682656769"
+          ]
+        },
+        {
+          "stationId": "cd6_s32",
+          "cells": [
+            "708:38682619905"
+          ]
+        },
+        {
+          "stationId": "cd6_s31",
+          "cells": [
+            "879:38682615810"
+          ]
+        },
+        {
+          "stationId": "cd6_s30",
+          "cells": [
+            "751:38682611714"
+          ]
+        },
+        {
+          "stationId": "cd6_s29",
+          "cells": [
+            "723:38682607618"
+          ]
+        },
+        {
+          "stationId": "cd6_s28",
+          "cells": [
+            "909:38682636289"
+          ]
+        },
+        {
+          "stationId": "cd6_s27",
+          "cells": [
+            "799:38682599426"
+          ]
+        },
+        {
+          "stationId": "cd6_s26",
+          "cells": [
+            "868:38684602369",
+            "867:38684585986"
+          ]
+        }
       ]
     },
     {
@@ -29,8 +91,99 @@
       "learnedAt": "2026-09-29",
       "rideCount": 1,
       "stations": [
-        { "stationId": "cd4_s21", "cells": ["701:38658715650"] },
-        { "stationId": "cd4_s20", "cells": ["701:38658715650"] }
+        {
+          "stationId": "cd4_s21",
+          "cells": [
+            "701:38658715650"
+          ]
+        },
+        {
+          "stationId": "cd4_s20",
+          "cells": [
+            "701:38658715650"
+          ]
+        }
+      ]
+    },
+    {
+      "lineId": "cd6",
+      "directionId": "cd6_to_lanjiagou",
+      "learnedAt": "2026-09-29",
+      "rideCount": 1,
+      "stations": [
+        {
+          "stationId": "cd6_s27",
+          "cells": [
+            "853:38682632234"
+          ]
+        },
+        {
+          "stationId": "cd6_s28",
+          "cells": [
+            "761:38682603561"
+          ]
+        },
+        {
+          "stationId": "cd6_s29",
+          "cells": [
+            "732:38682640427"
+          ]
+        },
+        {
+          "stationId": "cd6_s30",
+          "cells": [
+            "693:38682644482"
+          ]
+        },
+        {
+          "stationId": "cd6_s31",
+          "cells": [
+            "780:38682648578"
+          ]
+        },
+        {
+          "stationId": "cd6_s32",
+          "cells": [
+            "822:38682652674"
+          ]
+        },
+        {
+          "stationId": "cd6_s33",
+          "cells": [
+            "792:38682656769"
+          ]
+        },
+        {
+          "stationId": "cd6_s34",
+          "cells": [
+            "912:38682660866"
+          ]
+        },
+        {
+          "stationId": "cd6_s35",
+          "cells": [
+            "871:38656569346"
+          ]
+        },
+        {
+          "stationId": "cd6_s36",
+          "cells": [
+            "905:38656774146"
+          ]
+        },
+        {
+          "stationId": "cd6_s37",
+          "cells": [
+            "807:38656577578"
+          ]
+        },
+        {
+          "stationId": "cd6_s38",
+          "cells": [
+            "847:38656581633",
+            "855:38656782338"
+          ]
+        }
       ]
     }
   ]
