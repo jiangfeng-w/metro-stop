@@ -56,6 +56,9 @@ object CsvSessionScanner {
             fileName.removePrefix("sensor_").removeSuffix(".csv").ifEmpty { null }
         fileName.startsWith("events_") && fileName.endsWith(".csv") ->
             fileName.removePrefix("events_").removeSuffix(".csv").ifEmpty { null }
+        // v4 蜂窝小区流（cell-zone-detector-v4）：可选第四件，与会话同组清理
+        fileName.startsWith("cell_") && fileName.endsWith(".csv") ->
+            fileName.removePrefix("cell_").removeSuffix(".csv").ifEmpty { null }
         fileName.endsWith("_meta.json") ->
             fileName.removeSuffix("_meta.json").ifEmpty { null }
         else -> null

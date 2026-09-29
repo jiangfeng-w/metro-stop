@@ -79,9 +79,9 @@ class LogsCleaner(private val context: Context) {
         deleted
     }.getOrDefault(0)
 
-    /** 删除一个会话的三件套（存在的才删）；三者都成功/不存在才算整会话删除成功 */
+    /** 删除一个会话的文件组（sensor/events/cell/meta，存在的才删）；全部成功才算整会话删除成功 */
     private fun deleteSession(dir: File, stamp: String): Boolean {
-        val names = listOf("sensor_$stamp.csv", "events_$stamp.csv", "${stamp}_meta.json")
+        val names = listOf("sensor_$stamp.csv", "events_$stamp.csv", "cell_$stamp.csv", "${stamp}_meta.json")
         var allOk = true
         for (n in names) {
             val f = File(dir, n)

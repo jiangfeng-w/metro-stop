@@ -39,4 +39,9 @@ data class MonitorUiState(
     /** true = TYPE_LINEAR_ACCELERATION；false = 降级 TYPE_ACCELEROMETER */
     val usingLinearSensor: Boolean = true,
     val error: String? = null,
+    /**
+     * v4 蜂窝站区（cell-zone-detector-v4）：当前确认所在站区的显示名（非空 = 在某站区内）。
+     * 由小区序列驱动，比 IMU 状态机更贴近「车在哪个站」的事实；UI 可显示「进站中·<站区>」。
+     */
+    val zoneStation: String? = null,
 )

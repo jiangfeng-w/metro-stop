@@ -22,7 +22,7 @@
 | MVP 核心数站提醒 | `in-progress` | `spec/active/mvp-stop-counter/` | **检测器 v2 已上线（2026-09-28）**：早通勤真实数据重标阈值 + 乘车证据门 + 纠错补发提醒，回放验证 leg1 12 站全自动计数全对、leg2 2/2 全对零操作；剩余：**下一趟通勤验证（v3 版本）** + 锁屏 10 min 压测 |
 | **多信号到站判定 v3（步态门+站姿乘车+UI中文化）** | `in-progress` | `spec/active/multi-signal-detector-v3/` | **2026-09-29 早通勤现场验收未达标**（12 站按键 9 次、真实停稳时刻 7/12 显示「巡航中」、晨高峰 vib p90 0.16~0.49 触顶）——v3 回放资产继续有效，主链路由 **v4 接棒**；UI 中文化已完成 |
 | **蜂窝+Wi-Fi 指纹辅助验证** | `in-progress` | `spec/active/cellular-wifi-fingerprint-validate/` | **2026-09-29 早通勤 H1~H4 裁决完成**：**H3 蜂窝分区成立（12/12 站区覆盖，升级进 v4）**；H1/H2/H4 因 `LabWifiCollector` 重扫风暴缺陷数据不可用（wifi 流 2410 行全空、扫描 100% 被限频拒绝、events 71.6 MB）挂起，待 [`wifi-collector-fix`](spec/active/wifi-collector-fix/需求.md) 修后重测 |
-| **检测器 v4（蜂窝分区主导 + IMU 定时刻）** | `ready` | `spec/active/cell-zone-detector-v4/` | **2026-09-29 立项（用户批准方案 A）**：pci:ci→站区映射（学习期 2~3 趟）+ IMU 静稳定时刻 + 站区只计一次（信号停车免疫）+ 状态显示由 zone 驱动 + 步数辅助通道（实测 0 vs 80~117 步/分）+ 无映射降级回 v3；时刻表爬取想法评估否决（公开数据无逐班时刻表，站间时长先验由实测免费产生）；**学习期今晚起步（今早为第 1 趟）** |
+| **检测器 v4（蜂窝分区主导 + IMU 定时刻）** | `in-progress` | `spec/active/cell-zone-detector-v4/` | **2026-09-29 实施完成（影子模式）**：`CellZoneTracker` + `MonitorSession` 融合层（站区门/漏检重同步/区内放宽静稳侦察/目的站兜底/D−1 进区提前）+ 会话 cell 流第四件 + 自举映射 `cell_zones.json`；早通勤回放**一次通过 12/12 零误计**（v3 现场 5/12+3 误计）；影子模式 ≡ v3；**119 项测试全绿**；待重连装机；学习期今晚起步（第 2 趟），每方向 ≥2 趟跨趟泛化通过后切主通道 |
 | **Wi-Fi 采集器重扫风暴修复** | `in-progress` | `spec/active/wifi-collector-fix/` | **2026-09-29 修复实施完成**：30 s 节拍器 + 回调不续扫 + 失败事件 60 s 节流；107 项测试全绿；**待装机 + 今晚通勤重测**（验收：Wi-Fi 失败事件 ≤100 条、wifi 流出现非空快照）→ H1/H2/H4 补裁决 |
 | 步态识别与首站判定修正 | `in-progress` | `spec/active/gait-discrimination/` | **2026-09-28 部分实施**：乘车证据门 + 阈值重标 + 静稳跨度化已落地（误报根因分析的「滑动窗+单段持续」方案）；剩余：步频谱峰 / 周期性判据（陀螺数据已有，待下批数据验证）；**陀螺步态门部分已并入 v3 需求** |
 | CSV 记录默认关闭与自动清理 | `done` | `spec/done/csv-storage-policy/` | **2026-09-25 真机验收全部通过**（54 项测试全绿）；默认不记录 + 自动保留最近 10 次 / 14 天 / 200 MB；实测 20 次会话 → 1 次、报告保留、新装默认关且二次启动不被误判 |
@@ -64,9 +64,9 @@
 |---|---|---|
 | 0 | ✅ ~~装机 wifi-collector-fix~~ | 已完成（2026-09-29 11:40，`adb install -r` 保留数据成功，dumpsys 核验） |
 | 1 | **今晚通勤 = 学习期第 2 趟 + wifi 重测** | ① 正常监测（v3 照旧，双轨兜底）；② lab 开采集：验证 wifi 修复（失败事件 ≤100 条、出现非空快照）+ cellid 学习取数；③ 站站标「列车进站停稳」+ 乘车姿势标记 |
-| 2 | **今早 CSV 入 replay 资产** | 晨高峰基线（12 站 MARK 真值）+ v3 行为锁定用例——v4 回放验收的前提 |
-| 3 | **v4 实施** | core `CellZoneTracker`（融合判定 + 站区只计一次 + 降级回 v3）→ platform 小区监听进主链路 + 状态显示 zone 化 → 回放回归 |
-| 4 | **学习期完成 → 映射资产 → 切主通道** | 现场验收：≤1 次纠错、D−1/到站提醒正确、状态错乱占时 <2% |
+| 2 | ✅ ~~今早 CSV 入 replay 资产~~ | 已完成（2026-09-29：sensor+cells 四件入 `replay/`，`RealCommuteMorningRegressionTest` 按 12 站 MARK 真值锁定） |
+| 3 | ✅ ~~v4 实施~~ | 已完成（2026-09-29：**119 项测试全绿**，早通勤回放 12/12 零误计一次通过，影子模式装机；步数辅助通道留待主通道验证后并入） |
+| 4 | **学习期完成 → 映射资产 → 切主通道** | 每方向 ≥2 趟（`gen_cell_zones.py --merge` 跨趟合并）+ **跨趟泛化回放通过**（A 趟映射验 B 趟）→ 开 `cellZoneGateEnabled`/`cellZoneScoutEnabled` 走全量回归 → 现场验收：≤1 次纠错、D−1/到站提醒正确、状态错乱占时 <2% |
 | 5 | **H1/H2/H4 补裁决** | 用 wifi-collector-fix 重测数据（见 `cellular-wifi-fingerprint-validate` 第八节挂起项） |
 | 6 | **`transfer-route` 8 项待决策** | 换乘功能（6 号线 ⇄ 4 号线）；决策项见 `spec/active/transfer-route/需求.md` 第四节 |
 | 7 | 三 Tab 真机验收 / 锁屏 10 min 压测 | 手动验证；压测可与任一趟通勤并行 |

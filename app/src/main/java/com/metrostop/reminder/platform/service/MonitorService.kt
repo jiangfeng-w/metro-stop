@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import com.metrostop.reminder.R
+import com.metrostop.reminder.core.cell.CellZoneMap
 import com.metrostop.reminder.core.feature.FeatureExtractor
 import com.metrostop.reminder.core.fsm.MonitorSession
 import com.metrostop.reminder.core.fsm.TickOutcome
@@ -22,6 +23,7 @@ import com.metrostop.reminder.core.model.TuningConfig
 import com.metrostop.reminder.core.model.EndReason
 import com.metrostop.reminder.core.replay.CsvReplay
 import com.metrostop.reminder.core.route.LineRepository
+import com.metrostop.reminder.platform.cell.CellMonitorCollector
 import com.metrostop.reminder.platform.data.CsvRecorder
 import com.metrostop.reminder.platform.data.LogsCleaner
 import com.metrostop.reminder.platform.data.SettingsStore
@@ -91,6 +93,22 @@ class MonitorService : Service() {
     private var recorder: CsvRecorder? = null
 
     private var collector: SensorCollector? = null
+
+    /** v4 蜂窝小区流（可选；READ_PHONE_STATE 未授或监听失败时为 null = v3 行为） */
+    private var cellCollector: CellMonitorCollector? = null
+
+    /**
+     * 小区样本缓冲：telephony binder 线程生产、传感器线程在 [onSensorSample] 排空——
+     * 保证会话（含融合层）只在单一线程被访问。
+     */
+    private val cellQueue = java.util.concurrent.ConcurrentLinkedQueue<CellFeed>()
+
+    /** 一条待喂给会话的小区样本 */
+    private class CellFeed(
+        val tMs: Long,
+        val main: String?,
+        val neighbors: List<String>,
+    )
 
     private var uiTickJob: Job? = null
     private var latestVib = 0f
@@ -243,7 +261,12 @@ class MonitorService : Service() {
         }
 
         val config = TuningConfig.Default
-        val s = MonitorSession(route, config)
+        // v4 站区映射：assets 读取失败 / 无此线路方向 / 站序校验失败 → zoneLine=null（降级 v3）
+        val zoneLine = runCatching {
+            val text = assets.open("cell_zones.json").bufferedReader().use { it.readText() }
+            CellZoneMap.parse(text).getOrNull()?.forRoute(route)
+        }.getOrNull()
+        val s = MonitorSession(route, config, zoneLine)
         session = s
         extractor = FeatureExtractor(config)
 
@@ -275,6 +298,13 @@ class MonitorService : Service() {
         }
         collector = c
 
+        // v4 蜂窝小区流：监听失败 / 无权限 → 降级（无 cell 数据 = v3 行为，不崩不停）
+        val cc = CellMonitorCollector(this) { tMs, _utcMs, mainCell, neighbors, cellsRaw ->
+            recorder?.onCellRow(tMs, _utcMs, cellsRaw)
+            cellQueue.add(CellFeed(tMs, mainCell, neighbors))
+        }
+        cellCollector = if (cc.start()) cc else null
+
         wakeLock.acquire(timeoutMs = ((config.maxMonitorMin + 5) * 60_000).toLong())
         registerActionReceiver()
         isRunning = true
@@ -305,6 +335,19 @@ class MonitorService : Service() {
     private fun onSensorSample(sample: MotionSample) {
         val s = session ?: return
         val ex = extractor ?: return
+
+        // v4：先排空小区队列（t ≤ 本样本），保持会话单线程访问；
+        // 小区事件（ZONE_* / 提前 D−1）与 tick 事件同一出口落盘与提醒。
+        while (true) {
+            val feed = cellQueue.peek() ?: break
+            if (feed.tMs > sample.tMs) break
+            cellQueue.poll()
+            val cellEvents = s.onCellSample(feed.tMs, feed.main, feed.neighbors)
+            if (cellEvents.isNotEmpty()) {
+                handleOutcome(TickOutcome(events = cellEvents), notify = true, fromReplay = false)
+            }
+        }
+
         val f = ex.process(sample)
         latestH = f.h
         latestVib = f.vib
@@ -415,6 +458,9 @@ class MonitorService : Service() {
         unregisterActionReceiver()
         collector?.stop()
         collector = null
+        cellCollector?.stop()
+        cellCollector = null
+        cellQueue.clear()
         wakeLock.release()
         val rec = recorder
         recorder = null
@@ -552,6 +598,9 @@ class MonitorService : Service() {
         uiTickJob?.cancel()
         collector?.stop()
         collector = null
+        cellCollector?.stop()
+        cellCollector = null
+        cellQueue.clear()
         wakeLock.release()
         unregisterActionReceiver()
         scope.cancel()

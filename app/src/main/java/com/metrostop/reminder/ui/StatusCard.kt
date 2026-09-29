@@ -81,7 +81,13 @@ fun StatusCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("状态 ${state.state.cnName}", style = MaterialTheme.typography.bodySmall)
+                    // v4：站区确认时显示「进站中·<站区>」——由小区序列驱动，
+                    // 比 IMU 状态机更贴近「车在哪个站」的事实（修 v3 的 7/12 巡航中错乱）
+                    Text(
+                        text = state.zoneStation?.let { "状态 进站中·$it" }
+                            ?: "状态 ${state.state.cnName}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     // 每秒变化的时间放到独立叶子：1 Hz 重组只影响这一个 Text
                     ElapsedText(elapsedSecFlow)
                 }

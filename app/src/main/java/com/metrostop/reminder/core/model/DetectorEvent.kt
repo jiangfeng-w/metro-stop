@@ -61,6 +61,21 @@ enum class DetectorEventType {
     /** 手动纠正：少算了一站 */
     CORRECTION_DOWN,
 
+    /**
+     * 蜂窝站区确认（v4）：主服务/邻区小区连续 ≥cellZoneConfirmSamples 拍命中某站区。
+     * stationIndex = 区间起点 position（1 基路线计数），stationName = 区间显示名。
+     */
+    ZONE_CONFIRMED,
+
+    /** 蜂窝站区退出（当前小区不再命中任何站区） */
+    ZONE_EXITED,
+
+    /**
+     * 到站候选被站区门拦截（v4）：检测器报了停站、但当前站区不包含期望的下一站——
+     * 区间信号停车 / 上车站内停顿等。仅进 events CSV 供分析，不计数不提醒。
+     */
+    ZONE_SUPPRESSED,
+
     /** 自动结束（到站延时 / 超时兜底 / 手动结束） */
     MONITOR_END,
 }

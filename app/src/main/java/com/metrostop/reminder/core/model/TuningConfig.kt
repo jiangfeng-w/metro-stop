@@ -183,6 +183,38 @@ data class TuningConfig(
     /** 列车动态冲高的最短持续（秒） */
     val hSurgeMinSec: Double = 2.0,
 
+    // ---------- v4 蜂窝分区（cell-zone-detector-v4：蜂窝回答「在哪」，IMU 回答「停没停」）----------
+    /**
+     * 站区门开关：到站候选（检测器原始 STATION_ARRIVED / 分区侦察补检）必须落在包含
+     * 「期望下一站」的站区内才计数，否则记 ZONE_SUPPRESSED——区间信号停车 / 上车站内停顿免疫。
+     * **影子模式（学习期）保持 false**：跟踪器照常运行并记录 ZONE_* 事件，但不参与判定。
+     */
+    val cellZoneGateEnabled: Boolean = false,
+    /**
+     * 站区侦察开关：已确认站区内用**放宽的静稳判据**补检 v3 静默漏检的站
+     * （晨高峰停站窗 vib 均值 0.11~0.19，高于全局 vibStopTh=0.085 → 8 s 静稳跨度形不成 → 漏检）。
+     * 误报风险由站区身份兜底（站区只在车站附近出现）。影子模式 false。
+     */
+    val cellZoneScoutEnabled: Boolean = false,
+    /** 进区 / 退区驻留确认拍数（cellid 流 ≈1 Hz；实测小区切换到停稳提前 0~58 s） */
+    val cellZoneConfirmSamples: Int = 2,
+    /**
+     * 区内放宽静稳阈值：晨高峰停站窗 vib 均值 0.106~0.194（2026-09-29 早通勤 12 站实测），
+     * 0.22 覆盖全部停站均值且仍高于站台静立（p50 0.092）与站姿乘车停站的重叠区下限；
+     * 误触发由「站区身份 + 期望站位校验」双门兜底。
+     */
+    val zoneStillVibTh: Float = 0.22f,
+    /** 区内静稳容差（比全局 stillTolSec 稍宽：晨高峰人群噪声毛刺更密） */
+    val zoneStillTolSec: Double = 3.0,
+    /** 区内静稳确认时长（比全局 stillConfirmSec 短：站区先验已提供强身份证据） */
+    val zoneStillConfirmSec: Double = 6.0,
+    /**
+     * 目的站兜底到站：进入目的站区后经过此时长仍未静稳计数（用户走动噪声极大，
+     * 如玉双路停站窗 vib 均值 0.66）→ 直接产生到站候选。目的站是提醒的最终目标，
+     * 宁可提前不可漏发；提前量由 zone-entry 早于停稳 0~58 s 决定。
+     */
+    val zoneArrivalFallbackSec: Double = 50.0,
+
     // ---------- CSV 保留策略（非算法阈值，同样集中在此避免第二处硬编码）----------
     /** 保留最近多少次会话（三件套同删） */
     val retentionSessions: Int = 10,

@@ -77,7 +77,8 @@ class Notifier(
         val startedAtWallClock = System.currentTimeMillis() - (state.elapsedSec * 1000).toLong()
         return b.setContentTitle(title)
             .setContentText(text)
-            .setSubText(state.state.cnName)
+            // v4：站区确认时显示「进站中·<站区>」，与状态卡同口径（比 IMU 状态机更贴近事实）
+            .setSubText(state.zoneStation?.let { "进站中·$it" } ?: state.state.cnName)
             .setShowWhen(true)
             .setWhen(startedAtWallClock)
             .setUsesChronometer(true)

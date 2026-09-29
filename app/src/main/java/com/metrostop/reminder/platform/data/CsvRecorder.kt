@@ -38,12 +38,14 @@ class CsvRecorder(
     private val stamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
     private val sensorFile = File(dir, "sensor_$stamp.csv")
     private val eventsFile = File(dir, "events_$stamp.csv")
+    private val cellFile = File(dir, "cell_$stamp.csv")
     private val metaFile = File(dir, "${stamp}_meta.json")
 
     private val queue = Channel<String>(capacity = 4096)
     private var dropped = 0
     private var sensorWriter: BufferedWriter? = null
     private var eventsWriter: BufferedWriter? = null
+    private var cellWriter: BufferedWriter? = null
     private var writerJob: kotlinx.coroutines.Job? = null
     private val startedAtMs = System.currentTimeMillis()
 
@@ -57,29 +59,37 @@ class CsvRecorder(
         runCatching {
             sensorFile.writeText("t_ms,utc_ms,ax,ay,az,lx,ly,lz,gx,gy,gz,vib,h,state,n\n")
             eventsFile.writeText("t_ms,type,station_index,station_name,dwell_s,interval_s,note\n")
+            // v4 蜂窝小区流（可选第四件；格式与 lab cellid 一致，离线回放可直接复用）
+            cellFile.writeText("t_ms,utc_ms,cells\n")
             writeMeta()
         }
         writerJob = ioScope.launch {
             // **append 模式**：`bufferedWriter()` 会截断文件，把上面同步写的表头清掉。
             sensorWriter = java.io.FileOutputStream(sensorFile, true).bufferedWriter()
             eventsWriter = java.io.FileOutputStream(eventsFile, true).bufferedWriter()
+            cellWriter = java.io.FileOutputStream(cellFile, true).bufferedWriter()
             // 批量落盘：每 5 行（≈100 ms）flush 一次。
             // 取 5 而非 50：磁贴等短会话可能只跑几秒就结束，间隔太大会丢尾部数据。
             var sinceFlush = 0
             for (line in queue) {
-                val isSensor = line.startsWith(SENSOR_PREFIX)
-                val payload = if (isSensor) line.removePrefix(SENSOR_PREFIX) else line
-                if (isSensor) sensorWriter?.appendLine(payload) else eventsWriter?.appendLine(payload)
+                when {
+                    line.startsWith(SENSOR_PREFIX) -> sensorWriter?.appendLine(line.removePrefix(SENSOR_PREFIX))
+                    line.startsWith(CELL_PREFIX) -> cellWriter?.appendLine(line.removePrefix(CELL_PREFIX))
+                    else -> eventsWriter?.appendLine(line)
+                }
                 if (++sinceFlush >= 5) {
                     sensorWriter?.flush()
                     eventsWriter?.flush()
+                    cellWriter?.flush()
                     sinceFlush = 0
                 }
             }
             sensorWriter?.flush()
             eventsWriter?.flush()
+            cellWriter?.flush()
             runCatching { sensorWriter?.close() }
             runCatching { eventsWriter?.close() }
+            runCatching { cellWriter?.close() }
         }
     }
 
@@ -118,6 +128,11 @@ class CsvRecorder(
             append(e.note ?: "")
         }
         queue.trySend(line)
+    }
+
+    /** 蜂窝小区流一行（v4；cells 原始串 `pci:ci:rssi|...`，主服务排首，与 lab cellid 同格式） */
+    fun onCellRow(tMs: Long, utcMs: Long, cells: String) {
+        queue.trySend("$CELL_PREFIX$tMs,$utcMs,$cells")
     }
 
     private fun writeMeta() {
@@ -199,5 +214,6 @@ class CsvRecorder(
 
     companion object {
         private const val SENSOR_PREFIX = "S|"
+        private const val CELL_PREFIX = "C|"
     }
 }
