@@ -21,9 +21,9 @@
 |---|---|---|---|
 | MVP 核心数站提醒 | `done` | `spec/done/mvp-stop-counter/` | **2026-09-30 归档**：M1 主链路验收（通勤 ≥5 站误差 ≤1）被 v4 达标趟（09-30 早 14/14、0 纠错）事实覆盖（检测器 v1→v2→v3→v4 演进见各自文档）；M2 通知文案终稿 + 结束通知已落地（09-29）；**遗留：锁屏 10 min 压测未做，挪总纲后续优化节后补** |
 | **多信号到站判定 v3（步态门+站姿乘车+UI中文化）** | `done` | `spec/done/multi-signal-detector-v3/` | **2026-09-30 归档（毕业语义）**：真机现场验收未达标（早 9 按键 / 晚 7 按键双向漂移），裁决「纯 IMU 路线触顶」；两批回放资产 + GaitGate + UI 中文化保留生效，主链路由 **v4 接棒** |
-| **蜂窝+Wi-Fi 指纹辅助验证** | `in-progress` | `spec/active/cellular-wifi-fingerprint-validate/` | **H3 蜂窝分区成立已并入 v4（12/12 站区覆盖）**；**wifi 悬案已结案（2026-09-30 四轮对照实验）**：HyperOS 4 beta 的 WifiManager 兼容层对第三方 App 异常/抑制（`wifi_mgr=false` vs `settings_on=1` 恒分离，shell 扫描正常，neverForLocation / INTERNET 权限增删均无关）→ **H1/H2/H4 关闭（工具不可用非否定）**，节后系统更新后凭 `WIFI_DIAG` 重验（诊断事件已保留在采集器中） |
+| **蜂窝+Wi-Fi 指纹辅助验证** | `suspended` | `spec/suspended/cellular-wifi-fingerprint-validate/` | **2026-09-30 调查使命完成并挂起**：H3 蜂窝分区成立已并入 v4（12/12 站区覆盖）；定位裁决产出（隧道内定位不可用、方向关闭）；wifi 悬案定论 = HyperOS 4 beta 的 WifiManager 兼容层对第三方 App 异常/抑制（`wifi_mgr=false` vs `settings_on=1` 恒分离，shell 扫描正常）→ **H1/H2/H4 关闭（工具不可用非否定）**；**恢复条件 = 系统更新后凭 `WIFI_DIAG` 重验**（诊断事件保留在采集器中） |
 | **检测器 v4（蜂窝分区主导 + IMU 定时刻）** | `in-progress` | `spec/active/cell-zone-detector-v4/` | **主通道首趟通勤实测达标（2026-09-30 早，验收线 ≤1 纠错实际 0 次）**：12/12 + 2/2 计数全对、三级提醒全按序（「即将到站」用户好评）；遗留节后：701 共享区连锁（D−1/到达连锁提前 60~79 s）、到站时刻 ±34s 漂移 + 小区流 146 处断档（「比高德慢」根因）、IMU 状态显示错乱；3 方向映射各 rideCount=1；**126 项全绿**；节中第 2 趟合并 + 泛化回放 + rssi 挖掘（共享区拆分最优先） |
-| **Wi-Fi 采集器重扫风暴修复** | `in-progress` | `spec/active/wifi-collector-fix/` | 重扫风暴已治愈（失败事件 65 万→5 条 ✓）；**非空快照 0 经 2026-09-30 四轮对照实验结案：非采集器缺陷，系 HyperOS 4 beta 的 WifiManager 兼容层对第三方 App 异常/抑制**（工具不可用非否定）——`WIFI_DIAG` 诊断事件保留，节后系统更新后重验；采集器实现冻结待重验后一并收尾（见 `cellular-wifi-fingerprint-validate` 第八节） |
+| **Wi-Fi 采集器重扫风暴修复** | `suspended` | `spec/suspended/wifi-collector-fix/` | **2026-09-30 挂起**：修复已交付且生效（失败事件 65 万→5 条 ✓，重扫风暴治愈）；「非空快照 >0」经四轮对照实验定性无法在本系统达成——系 HyperOS 4 beta 的 WifiManager 兼容层异常，**非采集器缺陷**（详见 `cellular-wifi-fingerprint-validate` 第八节）；**恢复条件 = 系统更新后凭 `WIFI_DIAG` 重验**，通过即收尾 done |
 | 步态识别与首站判定修正 | `suspended` | `spec/suspended/gait-discrimination/` | **2026-09-30 挂起**：陀螺步态门部分已并入 v3（`GaitGate` 落地）；剩余步频谱峰/周期性判据被数据裁决证伪（真实走路 0% 检出、手摇误检 11~32%），重验证前不可上线；v4 蜂窝主导后优先级降低。**恢复条件**：v4 稳定后需 IMU 侧增强再启 |
 | CSV 记录默认关闭与自动清理 | `done` | `spec/done/csv-storage-policy/` | **2026-09-25 真机验收全部通过**（54 项测试全绿）；默认不记录 + 自动保留最近 10 次 / 14 天 / 200 MB；实测 20 次会话 → 1 次、报告保留、新装默认关且二次启动不被误判 |
 | 行程历史数据库与历史列表 | `planned` | `spec/active/trip-history-db/` | SQLite 存**行程摘要**（与 CSV 解耦，CSV 删了摘要仍在）+ 最简历史列表；归 M3；**待决策 5 项**（见文档第四节） |
@@ -34,7 +34,7 @@
 | S0 框架与文档 | `done` | `spec/done/s0-scaffold-and-docs/` | 目录 / AI 文档 / Gradle 骨架 |
 | 线路自助管理、V1.5 围栏自动开始、V2 习惯学习、上岛等 | — | — | 尚未立项（见总纲第十一节「后续优化」）；立项时在 `spec/active/` 建目录。注：线路/站点自助管理立项时需一并评估「线路数据 JSON → SQLite」迁移（见 `real-line-data/需求.md` 第六节） |
 
-挂起：`gait-discrimination`（2026-09-30 起，搁置原因与恢复条件见需求文档；目录 `spec/suspended/`）。
+挂起：`gait-discrimination`、`wifi-collector-fix`、`cellular-wifi-fingerprint-validate`（后两个 2026-09-30 挂起：wifi 悬案已定论为 HyperOS 兼容层异常，恢复条件 = 系统更新后凭 `WIFI_DIAG` 重验；目录 `spec/suspended/`）。
 
 > 状态含义与流转见 `spec/README.md`。**状态变更必须三处联动**：目录 / frontmatter / 本表。
 
