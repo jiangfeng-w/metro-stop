@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 权限清单：正式功能不含任何定位权限（硬性规则 3）。
-         下面三行是 lab-data-collection（短期调试数据采集）的临时例外，
-         仅供实验室采集旁路服务使用，主功能不申请不读取；采集需求下线时一并移除： -->
+    <!-- 权限清单：正式功能不含任何定位 SDK、不读取任何坐标（硬性规则 3）。
+         ACCESS_FINE_LOCATION：**主链路必需**（v4 读 CellInfo 的平台校验门槛，Android 10+ 起强制）——
+         仅用于读取小区标识（pci:ci），不是定位；主链路活性检测与运行时授权见 cell-zone-detector-v4。
+         ACCESS_COARSE_LOCATION 与 ACTIVITY_RECOGNITION 是 lab-data-collection（短期调试数据采集）
+         的临时例外，仅供实验室采集旁路服务使用；采集需求下线时随 lab 一并移除。 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />

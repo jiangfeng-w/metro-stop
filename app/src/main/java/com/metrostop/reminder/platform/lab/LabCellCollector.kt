@@ -150,6 +150,12 @@ class LabCellCollector(
 
         private fun idOrUnknown(v: Int): Int = if (v == Int.MAX_VALUE) UNKNOWN else v
 
-        private fun ciOrUnknown(v: Long): Long = if (v == Long.MAX_VALUE) UNKNOWN.toLong() else v
+        /**
+         * ci 未知哨兵归一（纯函数可测）：各制式未知值是 `Int.MAX_VALUE`（LTE/WCDMA/TDSCDMA/GSM/CDMA
+         * 的 `getCi()`）或 `Long.MAX_VALUE`（NR 的 `getNci()`）——只滤后者会把伪小区
+         * `…:2147483647` 落盘（2026-09-30 晚通勤实测出现 `184:2147483647`，多趟分析发现 2）。
+         */
+        internal fun ciOrUnknown(v: Long): Long =
+            if (v == Long.MAX_VALUE || v == Int.MAX_VALUE.toLong()) UNKNOWN.toLong() else v
     }
 }

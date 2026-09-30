@@ -122,4 +122,13 @@ class LabWifiCellCollectorsTest {
             ),
         )
     }
+
+    @Test
+    fun `ci未知哨兵两种极值都归UNKNOWN_伪小区不入库`() {
+        // 2026-09-30 批次 A5 回归（多趟分析发现 2）：LTE `getCi()` 的未知值是 Int.MAX_VALUE，
+        // 漏滤会落盘伪小区 `184:2147483647`（09-30 晚通勤实测出现）；NR `getNci()` 是 Long.MAX_VALUE
+        assertEquals(-1L, LabCellCollector.ciOrUnknown(Int.MAX_VALUE.toLong()))
+        assertEquals(-1L, LabCellCollector.ciOrUnknown(Long.MAX_VALUE))
+        assertEquals(38656577578L, LabCellCollector.ciOrUnknown(38656577578L))
+    }
 }
