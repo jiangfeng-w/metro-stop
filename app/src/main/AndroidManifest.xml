@@ -11,7 +11,11 @@
     <!-- cellular-wifi-fingerprint-validate（Wi-Fi 指纹采集，仍属 lab 临时例外）：
          扫描结果仅做 BSSID 哈希指纹、不做定位 → neverForLocation；
          CHANGE_WIFI_STATE 供 startScan 主动续扫（限频证据是假设 H4 的数据）。
-         指纹裁决出结论后随本需求一并移除。 -->
+         指纹裁决出结论后随本需求一并移除。
+         ⚠️ 2026-09-30 结案：wifi 快照恒空与 neverForLocation / INTERNET 权限均无关
+         （两者增删对照实验：LabWifiCollector WIFI_DIAG 显示 wifi_mgr 恒 false 而
+         settings wifi_on=1，shell 扫描正常）→ HyperOS 4 beta 的 WifiManager 兼容层
+         对第三方 App 异常/抑制，H1/H4 关闭，节后系统更新后凭 WIFI_DIAG 重验。 -->
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />

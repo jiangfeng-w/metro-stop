@@ -8,6 +8,7 @@ import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import java.security.MessageDigest
 import java.util.Locale
@@ -28,8 +29,13 @@ import java.util.Locale
  * - 限频证据（H4）：请求被系统拒绝（返回 false）落 `WIFI_STARTSCAN_FAIL`、扫描本身失败
  *   （`EXTRA_RESULTS_UPDATED=false`）落 `WIFI_SCAN_ERROR`——两类事件**60 s 节流**（保留累计计数），
  *   节流本身不掩盖失败总量；
- * - 权限降级由调用方（LabCollectorService 权限矩阵）负责：API 33+ 需 `NEARBY_WIFI_DEVICES`，
- *   更低版本需定位权限（manifest 声明 `neverForLocation`：扫描结果不用于定位，仅做指纹哈希）。
+ * - 权限降级由调用方（LabCollectorService 权限矩阵）负责：API 33+ 需 `NEARBY_WIFI_DEVICES`
+ *   （manifest 声明 `neverForLocation`：扫描结果不用于定位，仅做指纹哈希），更低版本需定位权限；
+ * - **wifi 空快照结案（2026-09-30，H1/H4 关闭）**：HyperOS 4 beta 上 App 进程内
+ *   `isWifiEnabled` 恒 false 而 settings `wifi_on=1`、shell 扫描正常，`getScanResults` 恒空，
+ *   与 neverForLocation / INTERNET 权限增删均无关（四轮对照实验）——系统 WifiManager
+ *   兼容层异常/抑制。`WIFI_DIAG` 事件（30 s 节拍随行，双通道读数）保留供节后系统
+ *   更新后重验；重验通过前 wifi 指纹方向不投入。
  */
 class LabWifiCollector(
     context: Context,
@@ -119,6 +125,14 @@ class LabWifiCollector(
         val now = nowElapsed()
         if (!shouldRequestScan(now, lastRequestElapsedMs, MIN_RESCAN_INTERVAL_MS)) return
         lastRequestElapsedMs = now
+        // 结案诊断（2026-09-30，保留供节后系统更新重验）：双通道开关读数——
+        // WifiManager.isWifiEnabled 实测恒 false 而 settings wifi_on=1，读数分离
+        // 即为系统 WifiManager 兼容层异常的直接证据。
+        writeEvent(
+            "WIFI_DIAG",
+            "wifi_mgr=${runCatching { wifi?.isWifiEnabled }.getOrDefault(false)}" +
+                ",settings_on=${settingsWifiOn()}",
+        )
         val ok = runCatching { wifi?.startScan() }.getOrDefault(false) == true
         if (!ok) {
             startScanFails++
@@ -128,6 +142,11 @@ class LabWifiCollector(
             }
         }
     }
+
+    /** settings 层的 Wi-Fi 开关（绕过 WifiManager 直读 Global.WIFI_ON，异常/缺失返回 -1） */
+    private fun settingsWifiOn(): Int = runCatching {
+        Settings.Global.getInt(appContext.contentResolver, Settings.Global.WIFI_ON)
+    }.getOrDefault(-1)
 
     @Suppress("DEPRECATION") // SSID 字段自 API 33 标记废弃；替代 getWifiSsid() 只在系统权限下可用
     private fun writeSnapshot() {
