@@ -21,15 +21,28 @@ import argparse, csv, io, json, os
 
 WIN_BEFORE_MS, WIN_AFTER_MS, MIN_DWELL_MS = 15000, 40000, 15000
 
+# ci 未知哨兵（2026-09-30 批次 A6 / 多趟分析发现 2）：LTE/WCDMA/GSM/CDMA getCi() 未知值
+# 是 Int.MAX_VALUE，NR getNci() 是 Long.MAX_VALUE——伪小区一律不入映射表。
+BAD_CI = {"-1", "2147483647", "9223372036854775807"}
+
 
 def load_cell_runs(path):
-    """lab_cellid.csv → [(t_ms, [pci:ci, ...])]; 主服务排首。"""
+    """lab_cellid.csv → [(t_ms, [pci:ci, ...])]; 主服务排首；未知哨兵伪小区过滤丢弃。"""
     rows = []
+    dropped = 0
     with io.open(path, encoding="utf-8") as f:
         for r in csv.DictReader(f):
             tokens = [t for t in r["cells"].split("|") if t]
-            ids = [":".join(t.split(":")[:2]) for t in tokens]
+            ids = []
+            for t in tokens:
+                parts = t.split(":")
+                if len(parts) > 1 and parts[1] in BAD_CI:
+                    dropped += 1
+                    continue
+                ids.append(":".join(parts[:2]))
             rows.append((int(r["t_ms"]), ids))
+    if dropped:
+        print(f"WARN: 丢弃 {dropped} 个伪小区（未知哨兵 ci）: {path}")
     return rows
 
 

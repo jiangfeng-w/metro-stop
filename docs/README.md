@@ -47,7 +47,7 @@
   2. **Android SDK**：`D:\Android\sdk`（`ANDROID_HOME` / `ANDROID_SDK_ROOT` 用户级）；cmdline-tools **19.0** 位于 `cmdline-tools\latest\`，**只有 `sdkmanager.bat`**（旧文档提到的 `android.exe` 新 CLI 本机没有，`sdkmanager --install <包>` 等价可用）；已装 `platform-tools` 37.0.1、`platforms;android-36`、`build-tools;36.0.0` + `35.0.0`；许可文件在 `D:\Android\sdk\licenses\android-sdk-license`（手写，无需 `--licenses`）。
   3. **Gradle 8.13（免安装）**：`D:\Android\gradle-8.13\`；日常仍用项目 wrapper `gradlew.bat`（Git Bash 用 `./gradlew`）。
   4. **Python 3.12.9**：`C:\Users\JF\python3\python`（`docs/spec/**/assets/*.py` 只用标准库，无第三方依赖）。
-- **已验证**：`gradlew.bat :app:testDebugUnitTest :app:assembleDebug` → `app\build\outputs\apk\debug\app-debug.apk`（12.0 MB），**79 项测试全绿**（`--rerun-tasks` 强制重跑复核过）。
+- **已验证**：`gradlew.bat :app:testDebugUnitTest :app:assembleDebug` → `app\build\outputs\apk\debug\app-debug.apk`（12.0 MB）。**测试门数字以 [`进度与交接.md`](进度与交接.md)「红线」条目为准（唯一源，2026-09-30 时点 126 项全绿），此处不维护快照数字**（批次 A3：防多处写死数字漂移）。
 - **环境变量注意**：`JAVA_HOME` / `ANDROID_HOME` / `ANDROID_SDK_ROOT` 与 JDK、platform-tools、cmdline-tools 的 `bin` 已写进用户级 PATH；**但已运行的进程（含 AI 会话）拿不到新值，须用绝对路径或先 `export JAVA_HOME=...`**。
 - **国内网络（必读，2026-09-28 实测）**：本机**到 github.com 的连接超时**，而官方源会把大构件 301 重定向到 GitHub —— 已在**机器级** `C:\Users\JF\.gradle\init.d\mirrors.gradle` 注入阿里云镜像（`repository/public` + `repository/google`，排在官方源之前，不动仓库文件）。Gradle 发行版与 JDK 也从镜像下载（华为云 `mirrors.huaweicloud.com/gradle/`、清华 Adoptium）。详见 `development.md`「国内网络」。
   - **不要在仓库里改 `settings.gradle.kts` 加镜像**（会污染提交）；机器级 init 脚本对本机所有项目生效。
@@ -69,7 +69,7 @@
 | 3 | ✅ ~~v4 实施~~ | 已完成（2026-09-29：**119 项测试全绿**，早通勤回放 12/12 零误计一次通过，影子模式装机 16:40；步数辅助通道留待主通道验证后并入） |
 | 4 | ✅ ~~用户拍板：影子模式提前 D−1 保留 or gate~~ | 已 gate（2026-09-29 夜）：`onCellSample` 提前 D−1 加 `cellZoneGateEnabled` 检查，影子完全 = v3；`cleanTest test` 强制重跑 119 项全绿 + `adb install -r` 装机 22:41；连带发现切主通道前置缺口「gate 开 + 有映射 + 小区流缺席 → 0 计数」（见 v4 需求变更记录） |
 | 5 | ✅ ~~v4 主通道首次实测（节前最后一天早通勤）~~ | **✅ 验收达标（2026-09-30 午间裁决）**：12/12 + 2/2 计数全对、**0 纠错按键**、三级提醒全按序；遗留三问题归档节后（701 共享区连锁 / 到站时刻 ±34s 漂移 + 小区流 146 处断档 / 状态显示错乱），详见 v4 需求变更记录 |
-| 6 | **外部评审批次 A：定位权限耦合等处置（定稿，各项执行前逐项过用户）** | 四份外部文档 + AI 复核已入 `spec/active/cell-zone-detector-v4/`（调研 / 架构评审 / 设想评审 / 多趟分析 / 复核意见）；**P0-1：`ACCESS_FINE_LOCATION` 是 v4 主链路读 CellInfo 的隐式必需**（manifest 标为 lab 临时例外、下线即移除 → 小区流静默失效）；批次 A 零装机不碰判定路径：A1 规则 3 表述改写三件套（AGENTS 属规则级文件单独确认）、A2 `android.location.*` 引用自检测试、A3 文档数字两处、A4 气压计归档、A5 `ciOrUnknown` 补 `Int.MAX_VALUE` 过滤 + 回归、A6 gen 脚本伪小区断言、A7 需求第十节 rssi 目标更正注（判停动已否定） |
+| 6 | ✅ ~~外部评审批次 A：定位权限耦合等处置~~ | **✅ 完成（2026-09-30 晚，A1-A7 全部执行，`cleanTest test` 129 项全绿 = 126 基线 + 3 新增）**：A1 权限三件套（AGENTS 规则 3 改写「只读标识不读坐标」+ manifest 注释 FINE 升主链路必需 + 需求 2.4 权限节）、A2 `LocationHygieneTest` 坐标 API 引用自检（白名单 = lab loc 流）、A5 `ciOrUnknown` 补 `Int.MAX_VALUE` 过滤 + 回归（伪小区不再落盘）、A3 文档数字两处、A4 气压计归档总纲 §11 #8、A6 gen 脚本 `BAD_CI` 断言、A7 需求第十节 rssi 目标更正注（判停动否定 / TA 升格）；**A5 代码生效随节后回滚版 APK 装机** |
 | 7 | **节中（笔记本）：合并 + 泛化回放 + rssi 挖掘 + 外部评审批次 B** | 第 2 趟 `--merge`（≥50% 交集）→ 跨趟泛化回放（A 趟映射验 B 趟 + 反向）；**rssi 挖掘目标已更正**：判停动出局，聚焦站内 vs 隧道分布特征 + TA 同批采集；**批次 B**：B4 701「假共享」假说按 gNB 跨趟重判（9438163 vs 9438162 相邻编号——若证实 4 号线连锁问题直接消失）、B5 TA 采集改 lab（装机采一次通勤，先确认设备支持）、B6 Viterbi 仓库外离线原型 |
 | 8 | ✅ ~~wifi 空快照系统层诊断~~ | **✅ 结案（2026-09-30 午间四轮对照实验）**：HyperOS 4 beta 的 WifiManager 兼容层对第三方 App 异常/抑制（`wifi_mgr=false` vs `settings_on=1` 恒分离、shell 扫描正常、neverForLocation / INTERNET 增删均无关）；**H1/H2/H4 关闭（工具不可用非否定）**，节后系统更新后凭 `WIFI_DIAG` 重验；详见 `cellular-wifi-fingerprint-validate` 第八节 |
 | 9 | **`transfer-route` 8 项待决策** | 换乘功能（6 号线 ⇄ 4 号线）；决策项见 `spec/active/transfer-route/需求.md` 第四节 |
@@ -86,4 +86,4 @@
 
 ### 新会话接手（第一句照抄即可）
 
-> 先读 `AGENTS.md`（规则）、`docs/README.md`（索引 + 需求速览 + 自举环境）和 `docs/进度与交接.md`（当前进度 / 下一步 / 待用户配合事项），再按「下一步」继续（当前：**09-30 晚通勤已裁决（12/12 计数对但 3 纠错不达标，根因 = 映射泛化 + 融合层两 bug）+ cd4_to_xihe 已落表；外部评审四文档 + 复核已入 v4 目录，批次 A（权限耦合三件套 / ciOrUnknown 修复 / rssi 目标注等 7 项）定稿待逐项执行，gNB 键 = 跨天泛化主力修法（节后 C2）；节中：第 2 趟 `--merge` + rssi 挖掘（判停动已出局）+ 批次 B（701 假共享重判 / TA 采集 / Viterbi 原型）；节后：rideCount=2 映射 + 统一调参 + wifi 重验 + 批次 C 装机**）。
+> 先读 `AGENTS.md`（规则）、`docs/README.md`（索引 + 需求速览 + 自举环境）和 `docs/进度与交接.md`（当前进度 / 下一步 / 待用户配合事项），再按「下一步」继续（当前：**09-30 晚通勤已裁决（12/12 计数对但 3 纠错不达标，根因 = 映射泛化 + 融合层两 bug）+ cd4_to_xihe 已落表；外部评审四文档 + 复核已入 v4 目录，批次 A 已执行完成（A1-A7，129 项全绿，A5 生效待节后装机）；节中：第 2 趟 `--merge`（注意交集遇扇区漂移会学出空站）+ rssi 挖掘（判停动已出局）+ 批次 B（701 假共享重判 / TA 采集 / Viterbi 原型）；节后：rideCount=2 映射 + 统一调参 + wifi 重验 + 批次 C 装机（gNB 键折算建议先于 Viterbi）**）。

@@ -9,7 +9,7 @@
 
 1. `core/` 包为**纯 Kotlin**：禁止 `import android.*`，禁止直接调用 `System.currentTimeMillis()` / `Log` / `Context`（时间与日志用注入的函数）。这是「CSV 回放 = 现场行为」的前提。
 2. **全部阈值参数只能定义在 `core/model/TuningConfig.kt`**，禁止在其它文件硬编码阈值；每次调参必须走闭环：导出实测 CSV → 回放验证 → 新参数写回 → **留下一个 replay 回归用例**。
-3. **不引入任何定位 / 地图 / 第三方位置 SDK**，不申请定位权限。传感器仅用 `TYPE_LINEAR_ACCELERATION`（无则降级 `TYPE_ACCELEROMETER`），采样 50 Hz。
+3. **不引入任何定位 / 地图 / 第三方位置 SDK，不读取任何坐标**（LocationManager / FusedLocation / `CellIdentity.getLatitude()` 等一律禁止）。传感器仅用 `TYPE_LINEAR_ACCELERATION`（无则降级 `TYPE_ACCELEROMETER`），采样 50 Hz。蜂窝标识（CellInfo）在 Android 10+ 被平台归类为精确定位数据源，因此 manifest 需声明 `ACCESS_FINE_LOCATION`——该权限**仅用于通过平台校验以读取小区标识（pci:ci）**，不是定位（2026-09-30 定稿，见 `docs/spec/active/cell-zone-detector-v4/复核意见-2026-09-30.md` §2.1；引用自检测试锁定）。
 4. 通知渠道（`monitor_ongoing` / `station_alert` / `station_alert_silent`）的属性**创建后系统不可更改**：M2 一次定稿，之后只允许改文案，不允许改重要性 / 震动模式（要改只能卸载重装）。
 5. 前台服务类型 `specialUse`（含 `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 属性）；`onStartCommand` 首行必须 `startForeground`（5 秒红线）；从后台启动必须 catch `ForegroundServiceStartNotAllowedException` 并给出可见反馈，禁止静默失败。
 6. PendingIntent 一律 `FLAG_IMMUTABLE` + 显式 Intent + **唯一 requestCode**；通知按钮接收器用动态注册（`RECEIVER_NOT_EXPORTED`）。
