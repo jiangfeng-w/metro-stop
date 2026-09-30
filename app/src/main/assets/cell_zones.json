@@ -185,6 +185,27 @@
           ]
         }
       ]
+    },
+    {
+      "lineId": "cd4",
+      "directionId": "cd4_to_xihe",
+      "learnedAt": "2026-09-30",
+      "rideCount": 1,
+      "stations": [
+        {
+          "stationId": "cd4_s21",
+          "cells": [
+            "820:38658711555"
+          ]
+        },
+        {
+          "stationId": "cd4_s22",
+          "cells": [
+            "804:38658572329",
+            "811:38658560002"
+          ]
+        }
+      ]
     }
   ]
 }
