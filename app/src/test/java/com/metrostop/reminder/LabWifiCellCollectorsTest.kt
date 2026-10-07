@@ -131,4 +131,46 @@ class LabWifiCellCollectorsTest {
         assertEquals(-1L, LabCellCollector.ciOrUnknown(Long.MAX_VALUE))
         assertEquals(38656577578L, LabCellCollector.ciOrUnknown(38656577578L))
     }
+
+    // ---------------- LabCellCollector TA 列（批次 B5） ----------------
+
+    @Test
+    fun `ta未知哨兵归一_极值与负值归UNKNOWN_零是合法TA`() {
+        // LTE getTimingAdvance() / NR getTimingAdvanceMicros() 的未知值 = CellInfo.UNAVAILABLE(Int.MAX_VALUE)
+        assertEquals(-1, LabCellCollector.taOrUnknown(Int.MAX_VALUE))
+        // 负值按基带异常同归 UNKNOWN；LTE TA 合法域含 0（不可用 >0 判断有效性）
+        assertEquals(-1, LabCellCollector.taOrUnknown(-3))
+        assertEquals(0, LabCellCollector.taOrUnknown(0))
+        assertEquals(31, LabCellCollector.taOrUnknown(31))
+        assertEquals(1_234, LabCellCollector.taOrUnknown(1_234))
+    }
+
+    @Test
+    fun `lab行拼装5段五元组_多值竖线分隔`() {
+        assertEquals(
+            "5:12345:-85:31:lte",
+            LabCellCollector.formatCellsLab(listOf(LabCellCollector.CellSnapshot(5, 12345, -85, true, ta = 31, rat = "lte"))),
+        )
+        // NR 微秒制 + 未采集到 TA（−1）与邻区（默认 ta=−1）混排
+        assertEquals(
+            "42:38682632234:-78:-1:nr|-1:999:-95:-1:",
+            LabCellCollector.formatCellsLab(
+                listOf(
+                    LabCellCollector.CellSnapshot(42, 38682632234L, -78, true, rat = "nr"),
+                    LabCellCollector.CellSnapshot(-1, 999, -95, false),
+                ),
+            ),
+        )
+        assertEquals("", LabCellCollector.formatCellsLab(emptyList()))
+    }
+
+    @Test
+    fun `formatCells保持3段_主链路cell流格式冻结`() {
+        // CellMonitorCollector 复用此函数写 cell_<stamp>.csv（core 解析端 + 回放资产锁定的 pci:ci:rssi）；
+        // CellSnapshot 新增 ta/rat 字段不得渗入输出
+        val withTa = LabCellCollector.CellSnapshot(5, 12345, -85, true, ta = 31, rat = "lte")
+        assertEquals("5:12345:-85", LabCellCollector.formatCells(listOf(withTa)))
+        // 签名（节拍行为）同样不含 TA
+        assertEquals("5:12345:-85", LabCellCollector.cellsSignature(listOf(withTa)))
+    }
 }
