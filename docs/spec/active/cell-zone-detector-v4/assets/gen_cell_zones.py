@@ -4,7 +4,7 @@
 用法：
     python gen_cell_zones.py --cellid <lab_cellid.csv> \
         --marks <marks.json> --line <lineId> --direction <directionId> \
-        --out <app/src/main/assets/cell_zones.json> [--merge]
+        --out <app/src/main/assets/cell_zones.json> [--merge | --union]
 
 marks.json 格式（学习趟的「列车进站停稳」MARK 真值，按进站顺序）：
     [
@@ -14,7 +14,11 @@ marks.json 格式（学习趟的「列车进站停稳」MARK 真值，按进站�
 
 规则（需求 2.1 / 评审 P3 定稿）：
 - 站区 cell = 停稳 MARK 窗 [-15s, +40s] 内驻留 ≥15s 的 pci:ci（进站段小区不入表）；
-- --merge 时与既有同名方向表合并：cell 在 ≥50% 学习趟出现才保留（rideCount 计趟数）。
+- --merge 时与既有同名方向表合并：cell 在 ≥50% 学习趟出现才保留（rideCount 计趟数）；
+- --union（2026-10-07 节中批次 B 增补）：跨趟**并集**合并（每站 cells = 既有 ∪ 新趟）。
+  动机：跨趟站台扇区漂移实测普遍（cd6_to_lanjiagou 两趟交集仅 7/12，交集合并会清空
+  5 个站区=「学出空站」），并集登记经 0 串站碰撞审计（仓库外 cross_trip_audit.py）
+  可 12/12 覆盖两趟真值；漂移扇区并集登记是数据面解，判定路径零改动。
 - pci:ci 为运营商网络标识（需求 3.3 可落盘）；本脚本输入输出均无 GPS / 无轨迹。
 """
 import argparse, csv, io, json, os
@@ -80,8 +84,11 @@ def main():
     ap.add_argument("--line", required=True)
     ap.add_argument("--direction", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--merge", action="store_true", help="与既有映射合并（跨趟 ≥50% 出现率）")
+    ap.add_argument("--merge", action="store_true", help="与既有映射合并（跨趟 ≥50% 出现率，取交集）")
+    ap.add_argument("--union", action="store_true", help="与既有映射并集合并（跨趟扇区漂移时用，见文件头）")
     args = ap.parse_args()
+    if args.merge and args.union:
+        raise SystemExit("--merge 与 --union 互斥")
 
     rows = load_cell_runs(args.cellid)
     marks = json.load(io.open(args.marks, encoding="utf-8"))
@@ -105,12 +112,10 @@ def main():
         st.pop("name", None)
 
     data = {"schemaVersion": 1, "generatedAt": new_line["learnedAt"], "note": "", "lines": []}
-    if args.merge and os.path.exists(args.out):
+    if (args.merge or args.union) and os.path.exists(args.out):
         data = json.load(io.open(args.out, encoding="utf-8"))
         for ex in data["lines"]:
             if ex["lineId"] == args.line and ex["directionId"] == args.direction:
-                # 跨趟合并：cell 必须在每一趟的驻留窗都出现（取交集）——
-                # 严于需求 ≥50% 出现率，向保守倾斜；单趟噪声 cell 会被第二趟洗掉。
                 if ex.get("rideCount", 1) < 1:
                     ex["rideCount"] = 1
                 old_by_id = {st["stationId"]: set(st["cells"]) for st in ex["stations"]}
@@ -118,18 +123,30 @@ def main():
                     old = old_by_id.get(st["stationId"])
                     if old is None:
                         raise SystemExit(f"站序不一致：{st['stationId']} 不在既有映射中，需人工核对")
-                    st["cells"] = sorted(old & set(st["cells"]))
+                    if args.union:
+                        # 跨趟扇区漂移下交集会清空站区（B1' 实证 7/12），并集 + 上线前碰撞审计
+                        st["cells"] = sorted(old | set(st["cells"]))
+                    else:
+                        # 跨趟合并：cell 必须在每一趟的驻留窗都出现（取交集）——
+                        # 严于需求 ≥50% 出现率，向保守倾斜；单趟噪声 cell 会被第二趟洗掉。
+                        st["cells"] = sorted(old & set(st["cells"]))
+                # 修复（2026-10-07）：合并结果必须写回既有方向表——原实现只改了
+                # rideCount/learnedAt，cells 从未落盘（原地合并路径首次被 --union 走通时暴露）。
+                ex["stations"] = new_line["stations"]
                 ex["rideCount"] += 1
                 ex["learnedAt"] = new_line["learnedAt"]
+                merged_ride = ex["rideCount"]
                 break
         else:
             data["lines"].append(new_line)
+            merged_ride = new_line["rideCount"]
     else:
         data["lines"].append(new_line)
+        merged_ride = new_line["rideCount"]
 
     with io.open(args.out, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-    print(f"OK -> {args.out} ({args.line}/{args.direction}, rideCount={new_line['rideCount']})")
+    print(f"OK -> {args.out} ({args.line}/{args.direction}, rideCount={merged_ride})")
 
 
 if __name__ == "__main__":
