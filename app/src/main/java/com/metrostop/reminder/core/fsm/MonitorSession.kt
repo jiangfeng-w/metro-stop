@@ -40,6 +40,8 @@ data class TickOutcome(
  * - **站区门**：到站候选必须落在包含期望下一站的站区，否则 ZONE_SUPPRESSED（信号停车免疫）；
  * - **重同步**：站区首站位 > 期望位（前一站被漏检）→ 候选直接对齐到站区首站位，防级联失步；
  * - **侦察补检**：区内放宽静稳（`zoneStillVibTh`/`zoneStillConfirmSec`）补检原始阈值下的静默漏检站；
+ *   共享区间（区间覆盖相邻多站，如 847 = 陆肖/观东 11..12）需**计数后出现新的区转移**才启用
+ *   （离站重进区通常是目的站进近），防在 D−1 站台长停时把静稳误判成 D 到站（10-08 晚实测）；
  * - **目的站兜底**：进目的站区后 `zoneArrivalFallbackSec` 仍无静稳计数（用户走动噪声）→ 产生到站候选；
  * - **D−1 提前**：进入目的站前一站的站区即发 ALERT_PREV（比停稳计数早 0~58 s；**仅主通道
  *   `cellZoneGateEnabled` 开时生效**，影子模式不发）。
@@ -227,9 +229,17 @@ class MonitorSession(
         if (config.cellZoneScoutEnabled && zoneTracker.active) {
             val zone = zoneTracker.confirmedRange
             val expected = stationCount + 1
-            // 侦察补检：区内放宽静稳跨度（原始 vibStopTh 形不成跨度的晨高峰漏检站）
-            if (zone != null && zone.first >= expected &&
-                expected <= route.stopCount &&
+            // 侦察补检：区内放宽静稳跨度（原始 vibStopTh 形不成跨度的晨高峰漏检站）。
+            // 启用条件两类：
+            // - `zone.first >= expected`：单站区间 / 站区前进位（含漏检重同步自愈）；
+            // - `expected in zone && lastZoneEventMs > lastCountedMs`：**共享区间**（区间覆盖相邻
+            //   多站，实测 6 号线 847 同时服务陆肖/观东 = 11..12）。共享区间内必须先由一次**新的
+            //   区转移**（离站后重新进区，通常即目的站进近）解除歧义，才能把静稳归给期望站——
+            //   否则在前一站站台长停时就会把它的静稳误判成下一站到站（10-08 晚「提前 93s 报到达」
+            //   即此类；旧映射把它做成单站区间才没暴露）。
+            if (zone != null && expected <= route.stopCount &&
+                (zone.first >= expected ||
+                    (expected in zone && lastZoneEventMs > lastCountedMs)) &&
                 detector.state != DetectorState.STOPPED
             ) {
                 if (f.vib < config.zoneStillVibTh) {
@@ -309,6 +319,9 @@ class MonitorSession(
      * - 站区不包含期望下一站 → ZONE_SUPPRESSED（区间信号停车 / 区外停顿免疫，不计数）；
      * - 站区首站位 > 期望位（前一站被漏检）→ **重同步**：候选直接对齐到站区首站位，
      *   防止一站漏检后期望位永久落后造成级联失步；
+     * - **单站站区精确认**（站区区间 = 期望站位本身）→ 豁免最短间隔门槛：位置已由蜂窝映射
+     *   独立证实，间隔门槛只产生误伤（2026-10-08 实测：前一站计数迟到 70s 把真实到站间隔
+     *   压到 46s，目的站候选被 STOP_SUSPECT 拦掉、到达提醒发不出）；
      * - `bypassInterval`：目的站兜底候选跳过最短间隔门槛（到站提醒宁早勿漏）。
      */
     private fun translateArrival(
@@ -337,6 +350,8 @@ class MonitorSession(
 
         // v4 站区门 + 期望站位解析（活性超时 = 小区流缺席/断流/映射失配 → 整段旁路回退 v3）
         var targetPos = stationCount + 1
+        // 单站站区精确认（区间 = 期望站位本身）：位置证据强 → 跳过下文的间隔门槛
+        var zoneExact = false
         if (config.cellZoneGateEnabled && zoneTracker.active && gateLive(nowMs)) {
             val zone = zoneTracker.confirmedRange
             when {
@@ -352,7 +367,7 @@ class MonitorSession(
                     return out
                 }
                 // 正常：站区包含期望下一站
-                targetPos in zone -> Unit
+                targetPos in zone -> zoneExact = zone.first == targetPos && zone.last == targetPos
                 // 漏检重同步：站区首站位在期望位之后（中间站被漏检）→ 对齐到站区首站位
                 zone.first > targetPos -> targetPos = zone.first
                 // 站区落后于期望位（上一站小区滞留中的重复候选）→ 拦截
@@ -369,9 +384,11 @@ class MonitorSession(
             }
         }
 
-        // 两站最短间隔门槛（仅当已有计数时才比较；首个计数不受门槛约束）
+        // 两站最短间隔门槛（仅当已有计数时才比较；首个计数不受门槛约束）。
+        // 单站站区精确认（zoneExact）时豁免：位置由蜂窝映射独立证实，间隔门槛只剩误伤
+        // （前一站计数迟到会压缩真实到站间隔）；共享区间与重同步候选保留门槛防区间内重复计数。
         val intervalS = if (lastCountedMs == 0L) null else (nowMs - lastCountedMs) / 1000.0
-        if (!bypassInterval && intervalS != null && intervalS < config.minStopIntervalSec) {
+        if (!bypassInterval && !zoneExact && intervalS != null && intervalS < config.minStopIntervalSec) {
             out += DetectorEvent(
                 tMs = nowMs,
                 type = DetectorEventType.STOP_SUSPECT,

@@ -19,7 +19,9 @@ import org.junit.Test
  *
  * 数据：2026-09-30 晚通勤 cd6 段（玉双路 → 观东 12 站，v4 主通道第 2 趟实测，现场 12/12 计数对
  * 但 3 次纠错不达标）。映射：cd6_to_lanjiagou——2026-10-07 起资产为**两趟并集**（rideCount=2），
- * 本用例同时锁定「并集后（现资产）」与「剥掉第 2 趟增量（= 原 rideCount=1 映射）」两种行为。
+ * 2026-10-08 再补两处（张家寺 799、陆肖 847 → **陆肖/观东共享区间 11..12**）——本用例同时锁定
+ * 「并集后（现资产）」与「剥掉全部增量（= 10-08 前的单趟映射）」两种行为。共享区间下观东的
+ * 到站由放宽静稳侦察补检（进区后 6 s 跨度，天然早于停稳；实测 444364381 = 停稳 −8.8 s）。
  *
  * MARK 真值（12 个「列车进站停稳」，t0=442588654 ms，会话相对秒）：
  * ```
@@ -66,35 +68,40 @@ class CrossTripGeneralizationTest {
         "cd6_s38", // 观东
     ) ?: throw AssertionError("路线构造失败")
 
-    /** 第 2 趟（09-30 晚）站台真值增量：rideCount=2 并集相对 rideCount=1 的全部差异（审计 B 段）。 */
-    private val trip2Cells = mapOf(
-        "cd6_s27" to "799:38682599426",   // 牛王庙（= 早方向同小区）
-        "cd6_s28" to "761:38682603522",   // 顺江路（同 gNB 异扇区）
-        "cd6_s29" to "732:38682640425",   // 三官堂（同 gNB 异扇区）
-        "cd6_s31" to "879:38682615810",   // 琉璃场（= 早方向同小区）
-        "cd6_s32" to "708:38682619905",   // 琉三路（= 早方向同小区）
-        "cd6_s37" to "807:38656577538",   // 陆肖（同 gNB 异扇区）
+    /**
+     * 并集映射相对「09-29 单趟学习（rideCount=1）」的全部新增小区：
+     * 09-30 第 2 趟增量（审计 B 段 6 项）+ 10-08 晚实测补登（张家寺 799、陆肖 847）。
+     */
+    private val unionIncrements = mapOf(
+        "cd6_s27" to listOf("799:38682599426"), // 牛王庙（= 早方向同小区）
+        "cd6_s28" to listOf("761:38682603522"), // 顺江路（同 gNB 异扇区）
+        "cd6_s29" to listOf("732:38682640425"), // 三官堂（同 gNB 异扇区）
+        "cd6_s31" to listOf("879:38682615810"), // 琉璃场（= 早方向同小区）
+        "cd6_s32" to listOf("708:38682619905"), // 琉三路（= 早方向同小区）
+        "cd6_s36" to listOf("799:38656573441"), // 张家寺（10-08 晚停稳后 +2s 驻留）
+        "cd6_s37" to listOf("807:38656577538", "847:38656581633"), // 陆肖（09-30 异扇区 + 10-08 站台驻留）
     )
 
     /** 现资产（并集，rideCount=2） */
     private fun unionLine(): CellZoneLine {
         val line = zoneMap.forRoute(route()) ?: throw AssertionError("路线取映射失败")
-        // 资产回归守卫：并集落地后不得回退（防 gen 脚本/手工编辑把第 2 趟增量洗掉）
+        // 资产回归守卫：并集落地后不得回退（防 gen 脚本/手工编辑把增量洗掉）
         for (st in line.stations) {
-            val c = trip2Cells[st.stationId]
-            if (c != null) assertTrue("资产缺少第 2 趟增量 $st", c in st.cells)
+            for (c in unionIncrements[st.stationId].orEmpty()) {
+                assertTrue("资产缺少新增小区 $c（$st）", c in st.cells)
+            }
         }
         return line
     }
 
-    /** 剥掉第 2 趟增量 = 原 rideCount=1 映射（09-29 晚单趟学习） */
+    /** 剥掉全部增量 = 10-08 前的并集（= 原 rideCount=1 单趟学习形态） */
     private fun rideCount1Line(): CellZoneLine {
         val line = unionLine()
         return line.copy(
             rideCount = 1,
             stations = line.stations.map { st ->
-                val c = trip2Cells[st.stationId]
-                if (c == null) st else st.copy(cells = st.cells - c)
+                val drop = unionIncrements[st.stationId].orEmpty()
+                if (drop.isEmpty()) st else st.copy(cells = st.cells - drop.toSet())
             },
         )
     }
@@ -142,28 +149,42 @@ class CrossTripGeneralizationTest {
             arr.none { "resync" in (it.note ?: "") },
         )
 
-        // 2. 12/12 站区确认（泛化命中 = 每一站的站区都被进区确认过）
-        assertEquals(allStations.toSet(), zoneConfirms(r).map { it.stationName }.toSet())
+        // 2. 12/12 站区覆盖（泛化命中 = 每个站位都落在某个已确认区间内；
+        //    10-08 起陆肖/观东共享 847 → 会出现「陆肖~观东 = 11..12」的合并区间，故按覆盖判定）
+        val covered = zoneConfirms(r).mapNotNull { ev ->
+            val m = Regex("range=(\\d+)\\.\\.(\\d+)").find(ev.note ?: "") ?: return@mapNotNull null
+            m.groupValues[1].toInt()..m.groupValues[2].toInt()
+        }.flatten().toSet()
+        assertEquals(
+            "站位覆盖: ${covered.sorted()} / 确认区间: ${zoneConfirms(r).map { it.note }}",
+            (1..12).toSet(),
+            covered,
+        )
 
         // 3. 除上车段 2 个 phantom 外，10 个真到站时刻全部落在 MARK ±45 s
         //    （zone_still 侦察天然提前于停稳、张家寺小区在停稳后 +8s 才服务，容差覆盖实测极值 ±40s）
+        val trace = r.events.joinToString("\n") {
+            "${it.type.name.padEnd(16)} ${it.tMs} (${it.stationName}) ${it.note ?: ""}"
+        }
         for (a in arr) {
             val mk = marks[a.stationName] ?: continue
             if (a.stationName == "牛王庙" || a.stationName == "顺江路") continue // 上车段 phantom（见类注释）
             val devSec = (a.tMs - mk) / 1000.0
             assertTrue(
-                "${a.stationName} 到站偏差 ${devSec}s 超出 ±45s",
+                "${a.stationName} 到站偏差 ${devSec}s 超出 ±45s\n$trace",
                 Math.abs(devSec) <= 45.0,
             )
         }
 
-        // 4. 三级提醒齐全：D−1（陆肖区→观东）+ 即将到站 + 已到站（rideCount=1 时 D−1 丢失）
-        assertTrue(r.events.any { it.type == DetectorEventType.ALERT_PREV })
-        assertTrue(r.events.any { it.type == DetectorEventType.ALERT_DEST_SOON })
-        assertTrue(r.events.any { it.type == DetectorEventType.ALERT_ARRIVED })
+        // 4. 提醒链：D−1（进共享区间 11..12 即发）+ 已到站。
+        //    「即将到站」要求**独占**目的站区，10-08 起 847 共享 11..12 → 进区侦察即计数（arrived
+        //    先行），独占 12..12 进区发生在计数之后 → 本趟不再发 DEST_SOON（其语义由
+        //    MonitorSessionGateFallbackTest 的独占区用例覆盖）。
+        assertTrue("D−1 提醒缺失\n$trace", r.events.any { it.type == DetectorEventType.ALERT_PREV })
+        assertTrue("已到站提醒缺失\n$trace", r.events.any { it.type == DetectorEventType.ALERT_ARRIVED })
 
         // 5. 数满自动结束
-        assertTrue(r.events.any { it.type == DetectorEventType.MONITOR_END })
+        assertTrue("未正常结束\n$trace", r.events.any { it.type == DetectorEventType.MONITOR_END })
     }
 
     @Test
