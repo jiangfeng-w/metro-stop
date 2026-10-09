@@ -135,6 +135,14 @@ class CsvRecorder(
         queue.trySend("$CELL_PREFIX$tMs,$utcMs,$cells")
     }
 
+    /**
+     * 采集链路诊断行（C1；与应用内检测事件同表：`t_ms,type,……,note`）——
+     * 目前用于 `CELL_STREAM_SILENT`（小区流连续无样本）与 `CELL_POLL_ERROR`（主动轮询失败节流记录）。
+     */
+    fun onDiagnostic(tMs: Long, type: String, note: String) {
+        queue.trySend("$tMs,$type,,,,,$note")
+    }
+
     private fun writeMeta() {
         val battery = runCatching {
             val bm = appContext.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager

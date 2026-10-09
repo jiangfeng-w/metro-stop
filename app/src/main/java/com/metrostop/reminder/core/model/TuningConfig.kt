@@ -223,6 +223,22 @@ data class TuningConfig(
      */
     val zoneArrivalFallbackSec: Double = 50.0,
 
+    // ---------- C1 蜂窝拍点加密（2026-10-08 夜：主动轮询 + 静默活性检测）----------
+    /**
+     * 主动轮询周期（s）：`requestCellInfoUpdate` 定时取一拍（API 29+；API < 29 无此 API，
+     * minSdk 26 下自动跳过走纯回调）。被动的 `LISTEN_CELL_INFO` 回调在息屏/后台会塌缩
+     * （2026-10-08 晚实测 1 拍/27~49 s，早趟 1/5.2 s；主链路与 lab 两条独立通路同步变稀
+     * = 平台层），主动轮询是止血点：3 s 周期在站区确认（≥2 拍）与进区提前量（0~58 s）留足余量。
+     */
+    val cellPollIntervalSec: Double = 3.0,
+    /**
+     * 小区流静默告警（s）：回调 + 轮询连续此时长没有样本（权限缺失 / 监听静默失效 / 无线侧异常）
+     * → 报 `CELL_STREAM_SILENT`（lab 落事件、主链路落日志）并按窗口尝试自愈（重挂监听）；
+     * 静默期内只报一次，恢复后重新武装。**判定路径不受影响**——站区门活性回退
+     * （[cellZoneGateLivenessSec] = 300 s）照旧兜底，此告警只为让断流「可见」。
+     */
+    val cellStreamSilentWarnSec: Double = 45.0,
+
     // ---------- CSV 保留策略（非算法阈值，同样集中在此避免第二处硬编码）----------
     /** 保留最近多少次会话（三件套同删） */
     val retentionSessions: Int = 10,

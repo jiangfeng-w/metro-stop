@@ -2,7 +2,6 @@ package com.metrostop.reminder.platform.lab
 
 import android.content.Context
 import android.os.Build
-import android.os.SystemClock
 import android.telephony.CellIdentityNr
 import android.telephony.CellInfo
 import android.telephony.CellInfoCdma
@@ -12,14 +11,16 @@ import android.telephony.CellInfoNr
 import android.telephony.CellInfoTdscdma
 import android.telephony.CellInfoWcdma
 import android.telephony.CellSignalStrengthNr
-import android.telephony.PhoneStateListener
-import android.telephony.TelephonyManager
+import com.metrostop.reminder.core.model.TuningConfig
 
 /**
  * lab 采集的蜂窝小区序列流（cellular-wifi-fingerprint-validate，**旁路工具，与监测主链路零交集**）：
  *
- * - 数据源：[TelephonyManager.listen] `LISTEN_CELL_INFO` 回调 + 启动时 [TelephonyManager.getAllCellInfo]
- *   首拍；**1 Hz 节流 + 变化即写**——小区集合签名变化立即落行（切换不落节流窗），否则 1 Hz 快照（需求 3.1）；
+ * - 数据源：**C1 起走 [CellInfoStreamEngine]**——`LISTEN_CELL_INFO` 回调（API 31+ 为
+ *   `TelephonyCallback`，旧版兜底 `PhoneStateListener`）+ `requestCellInfoUpdate` 主动轮询
+ *   （API 29+，`cellPollIntervalSec`）+ 启动时 `getAllCellInfo` 首拍；
+ *   **1 Hz 节流 + 身份签名变化即写**——小区身份（pci:ci + 主服务标记）变化立即落行（切换不落节流窗），
+ *   否则 1 Hz 快照（需求 3.1）；rssi 抖动不破节流（签名拆分，断档指标可信）；
  * - 行格式：`t_ms,utc_ms,cells`，cells = `pci:ci:rssi:ta:rat` 多值 `|` 分隔、**主服务（registered）排首**
  *   （批次 B5 起 5 段：ta = LTE TA 格原始值 / NR 微秒原始值（两制式单位不同，分析按 rat 分列换算
  *   距离：LTE ≈78 m/格、NR ≈150 m/μs），未知 −1；rat ∈ lte|nr|wcdma|tdscdma|gsm|cdma。
@@ -27,6 +28,8 @@ import android.telephony.TelephonyManager
  *   lab 走 [formatCellsLab]；签名 [cellsSignature] 不含 TA，节拍行为不变）；
  * - 制式差异归一为 [CellSnapshot]（LTE/NR 取 pci/ci，WCDMA/TDSCDMA 取 psc/cid，GSM/CDMA 无 pci 填 −1），
  *   rssi 列取该小区 `dbm`（与既有 `cell` 流口径一致）；
+ * - 活性：连续 `cellStreamSilentWarnSec` 无样本 → `CELL_STREAM_SILENT` 事件 + 重挂被动路（自愈）；
+ *   轮询失败按窗口记 `CELL_POLL_ERROR count=…`（平台限速属预期，允许失败）；
  * - 隐私（需求 3.3）：CI/PCI 是运营商网络标识，可直接落盘；
  * - 权限：`READ_PHONE_STATE`（lab 权限矩阵 hasPhone，与既有 `cell` 流同门）。
  */
@@ -34,60 +37,45 @@ class LabCellCollector(
     context: Context,
     private val write: (stream: String, row: String) -> Unit,
     private val writeEvent: (type: String, detail: String) -> Unit,
+    private val config: TuningConfig = TuningConfig.Default,
 ) {
 
     private val appContext = context.applicationContext
-    private var telephony: TelephonyManager? = null
-    private var listener: PhoneStateListener? = null
+    private var engine: CellInfoStreamEngine? = null
 
-    private var lastRowElapsedMs = 0L
-    private var lastSignature: String? = null
-
-    /** 注册 CellInfo 监听并落首拍；失败返回 false（调用方从 activeStreams 移除 cellid） */
-    @Suppress("DEPRECATION")
+    /** 注册监听 + 主动轮询并落首拍；失败返回 false（调用方从 activeStreams 移除 cellid） */
     fun start(): Boolean {
-        val tm = appContext.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: run {
-            writeEvent("CELLID_START", "no_telephony_service")
-            return false
-        }
-        telephony = tm
-        val l = object : PhoneStateListener() {
-            override fun onCellInfoChanged(cellInfo: MutableList<CellInfo>?) {
-                onCells(cellInfo ?: emptyList())
+        val e = CellInfoStreamEngine(
+            appContext,
+            config,
+            sink = { elapsedMs, utcMs, snaps ->
+                write("cellid", "$elapsedMs,$utcMs,${formatCellsLab(snaps)}")
+            },
+            onEvent = { type, detail -> writeEvent(type, detail) },
+        )
+        engine = e
+        when (e.start()) {
+            CellInfoStreamEngine.StartResult.OK -> Unit
+            CellInfoStreamEngine.StartResult.NO_TELEPHONY_SERVICE -> {
+                engine = null
+                writeEvent("CELLID_START", "no_telephony_service")
+                return false
+            }
+
+            CellInfoStreamEngine.StartResult.LISTEN_FAILED -> {
+                engine = null
+                writeEvent("CELLID_START", "listen_failed")
+                return false
             }
         }
-        listener = l
-        val ok = runCatching { tm.listen(l, PhoneStateListener.LISTEN_CELL_INFO) }.isSuccess
-        if (!ok) {
-            writeEvent("CELLID_START", "listen_failed")
-            listener = null
-            telephony = null
-            return false
-        }
-        writeEvent("CELLID_START", "cell_info_listener")
-        onCells(runCatching { tm.allCellInfo }.getOrNull().orEmpty())
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) "callback+poll" else "callback"
+        writeEvent("CELLID_START", "cell_info_listener $mode")
         return true
     }
 
     fun stop() {
-        val tm = telephony
-        val l = listener
-        if (tm != null && l != null) {
-            runCatching { tm.listen(l, PhoneStateListener.LISTEN_NONE) }
-        }
-        telephony = null
-        listener = null
-    }
-
-    private fun onCells(cells: List<CellInfo>) {
-        val snaps = sortedCells(parseCells(cells))
-        val signature = cellsSignature(snaps)
-        val now = SystemClock.elapsedRealtime()
-        // 变化即写（切换不落节流窗）；签名不变才走 1 Hz 节流
-        if (!shouldWrite(now, lastRowElapsedMs, signature, lastSignature)) return
-        lastSignature = signature
-        lastRowElapsedMs = now
-        write("cellid", "$now,${System.currentTimeMillis()},${formatCellsLab(snaps)}")
+        engine?.stop()
+        engine = null
     }
 
     /** 单个小区的归一化快照（未知值一律 −1）；ta/rat 批次 B5 新增，带默认值——主链路复用处零改动 */
@@ -109,7 +97,7 @@ class LabCellCollector(
         private const val RAT_GSM = "gsm"
         private const val RAT_CDMA = "cdma"
 
-        /** 写行决策（纯函数可测）：签名变化 → 立即写；否则距上次 ≥ 1 s 才写 */
+        /** 写行决策（纯函数可测）：**身份签名**变化 → 立即写；否则距上次 ≥ 1 s 才写 */
         fun shouldWrite(
             nowMs: Long,
             lastWriteMs: Long,
@@ -129,12 +117,23 @@ class LabCellCollector(
         /**
          * lab cellid 流行拼装（批次 B5）：`pci:ci:rssi:ta:rat`——前 3 段与 [formatCells] 完全兼容；
          * ta = LTE TA 格原始值 / NR 微秒原始值（**两制式单位不同**，分析按 rat 换算距离）；
-         * 签名（[cellsSignature]）不含 TA，避免基带高频回报 TA 放大写行量。
+         * 签名（[identitySignature]）不含 TA，避免基带高频回报 TA 放大写行量。
          */
         fun formatCellsLab(snaps: List<CellSnapshot>): String =
             snaps.joinToString("|") { "${it.pci}:${it.ci}:${it.rssi}:${it.ta}:${it.rat}" }
 
+        /**
+         * 全量签名（含 rssi，**仅供回归 / 离线审计**，不再参与写行决策——见 [identitySignature]）。
+         */
         fun cellsSignature(snaps: List<CellSnapshot>): String = formatCells(snaps)
+
+        /**
+         * **身份签名**（C1 签名拆分，P0-3）：`pci:ci` + 主服务标记（`r` 后缀），不含 rssi。
+         * 写行决策只认它——小区集合 rssi 抖动不再破 1 Hz 节流，断档指标（行间隔）才反映
+         * 真实的「有没有拍到」而不是「信号抖没抖」；小区切换仍立即写行。
+         */
+        fun identitySignature(snaps: List<CellSnapshot>): String =
+            snaps.joinToString("|") { "${it.pci}:${it.ci}${if (it.registered) "r" else ""}" }
 
         /** 各制式 CellInfo → 快照；无法识别的制式返回 null（落事件由调用方兜底） */
         fun parseCells(cells: List<CellInfo>): List<CellSnapshot> = cells.mapNotNull { info ->

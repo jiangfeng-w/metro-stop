@@ -1,5 +1,6 @@
 package com.metrostop.reminder
 
+import com.metrostop.reminder.platform.lab.CellInfoStreamEngine
 import com.metrostop.reminder.platform.lab.LabCellCollector
 import com.metrostop.reminder.platform.lab.LabWifiCollector
 import org.junit.Assert.assertEquals
@@ -104,23 +105,76 @@ class LabWifiCellCollectorsTest {
         assertTrue(
             LabCellCollector.shouldWrite(
                 nowMs = 10_500, lastWriteMs = 10_000,
-                signature = "5:100:-85", lastSignature = "5:200:-85",
+                signature = "5:100r", lastSignature = "5:200",
             ),
         )
         // 签名不变 + 窗口内 → 不写
         assertFalse(
             LabCellCollector.shouldWrite(
                 nowMs = 10_500, lastWriteMs = 10_000,
-                signature = "5:100:-85", lastSignature = "5:100:-85",
+                signature = "5:100r", lastSignature = "5:100r",
             ),
         )
         // 签名不变 + 满 1 s → 写
         assertTrue(
             LabCellCollector.shouldWrite(
                 nowMs = 11_000, lastWriteMs = 10_000,
-                signature = "5:100:-85", lastSignature = "5:100:-85",
+                signature = "5:100r", lastSignature = "5:100r",
             ),
         )
+    }
+
+    // ---------------- C1 拍点加密：身份签名拆分 + 静默活性检测 ----------------
+
+    @Test
+    fun `身份签名_不含rssi与TA_主服务带r标记`() {
+        // P0-3（C1）：写行决策只认身份签名 = pci:ci + 主服务标记（r），rssi / TA / 制式都不参与
+        assertEquals(
+            "5:100r",
+            LabCellCollector.identitySignature(
+                listOf(LabCellCollector.CellSnapshot(5, 100, -85, true, ta = 31, rat = "lte")),
+            ),
+        )
+        assertEquals(
+            "5:100r|7:200",
+            LabCellCollector.identitySignature(
+                listOf(snap(5, 100, -85, registered = true), snap(7, 200, -90)),
+            ),
+        )
+        assertEquals("", LabCellCollector.identitySignature(emptyList()))
+    }
+
+    @Test
+    fun `写行决策_身份不变仅rssi抖动_不破1Hz节流`() {
+        // 2026-10-08 晚实测：rssi 抖动（−85 → −71）在旧签名（含 rssi）下会「变化即写」，
+        // 断档指标被写成「信号抖没抖」；签名拆分后身份不变 → 走 1 Hz 节流（断档 = 有没有拍到）
+        val a = listOf(snap(5, 100, -85, registered = true))
+        val b = listOf(snap(5, 100, -71, registered = true))
+        assertEquals(LabCellCollector.identitySignature(a), LabCellCollector.identitySignature(b))
+        assertNotEquals( // 全量签名（含 rssi）仍能区分——保留给离线审计
+            LabCellCollector.cellsSignature(a),
+            LabCellCollector.cellsSignature(b),
+        )
+        assertFalse(
+            LabCellCollector.shouldWrite(
+                nowMs = 10_500, lastWriteMs = 10_000,
+                signature = LabCellCollector.identitySignature(b),
+                lastSignature = LabCellCollector.identitySignature(a),
+            ),
+        )
+    }
+
+    @Test
+    fun `静默告警_首拍前不报_过窗报一次_已报不重复`() {
+        val warn = 45_000L
+        // 首拍前（尚无样本）不报——避免启动瞬间误报
+        assertFalse(CellInfoStreamEngine.silenceDue(100_000, lastSampleMs = 0, warned = false, warnMs = warn))
+        // 有样本但未过窗 → 不报
+        assertFalse(CellInfoStreamEngine.silenceDue(100_000, lastSampleMs = 60_000, warned = false, warnMs = warn))
+        // 刚好过窗 → 报（10-08 晚塌缩 1 拍/27~49 s 场景下 45 s 窗口必然触发）
+        assertTrue(CellInfoStreamEngine.silenceDue(105_000, lastSampleMs = 60_000, warned = false, warnMs = warn))
+        // 本静默期已报过 → 不重复
+        assertFalse(CellInfoStreamEngine.silenceDue(200_000, lastSampleMs = 60_000, warned = true, warnMs = warn))
     }
 
     @Test

@@ -306,11 +306,20 @@ class MonitorService : Service() {
         }
         collector = c
 
-        // v4 蜂窝小区流：监听失败 / 无权限 → 降级（无 cell 数据 = v3 行为，不崩不停）
-        val cc = CellMonitorCollector(this) { tMs, _utcMs, mainCell, neighbors, cellsRaw ->
-            recorder?.onCellRow(tMs, _utcMs, cellsRaw)
-            cellQueue.add(CellFeed(tMs, mainCell, neighbors))
-        }
+        // v4 蜂窝小区流：监听失败 / 无权限 → 降级（无 cell 数据 = v3 行为，不崩不停）。
+        // C1 拍点加密：主动轮询（API 29+）+ 静默活性检测；诊断事件落会话 events CSV
+        // （CELL_STREAM_SILENT / CELL_POLL_ERROR——主链路断流不必只看 CSV 行间隔）
+        val cc = CellMonitorCollector(
+            this,
+            onSample = { tMs, _utcMs, mainCell, neighbors, cellsRaw ->
+                recorder?.onCellRow(tMs, _utcMs, cellsRaw)
+                cellQueue.add(CellFeed(tMs, mainCell, neighbors))
+            },
+            onEvent = { type, detail ->
+                recorder?.onDiagnostic(SystemClock.elapsedRealtime(), type, detail)
+            },
+            config = config,
+        )
         cellCollector = if (cc.start()) cc else null
 
         wakeLock.acquire(timeoutMs = ((config.maxMonitorMin + 5) * 60_000).toLong())
