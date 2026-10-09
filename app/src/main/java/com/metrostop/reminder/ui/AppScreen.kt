@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,9 @@ import java.io.File
 @Composable
 fun AppScreen(vm: AppViewModel, onRequestLabPermissions: () -> Unit = {}) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // 各 Tab 的 rememberSaveable 状态持有器：`when` 分支切走时会销毁组合树，
+    // 无此持有器时 Tab 内状态（如 LabCard 的「通勤精简」开关）切走即丢（2026-10-09 修复）。
+    val tabStateHolder = rememberSaveableStateHolder()
     val error by vm.uiError.collectAsState()
     val scope = rememberCoroutineScope()
     var showCsvPicker by remember { mutableStateOf(false) }
@@ -79,17 +83,21 @@ fun AppScreen(vm: AppViewModel, onRequestLabPermissions: () -> Unit = {}) {
             }
         },
     ) { padding ->
-        when (selectedTab) {
-            0 -> MonitorTab(vm, Modifier.padding(padding))
-            1 -> SettingsTab(vm, Modifier.padding(padding))
-            else -> DebugTab(
-                vm = vm,
-                csvFiles = csvFiles,
-                onCsvFilesLoaded = { csvFiles = it },
-                onShowCsvPicker = { showCsvPicker = it },
-                onRequestLabPermissions = onRequestLabPermissions,
-                modifier = Modifier.padding(padding),
-            )
+        // SaveableStateProvider 按 Tab 保存/恢复 rememberSaveable 状态（NavHost 同款做法）——
+        // 切换 Tab 不再丢失各页的开关等 UI 状态
+        tabStateHolder.SaveableStateProvider(selectedTab) {
+            when (selectedTab) {
+                0 -> MonitorTab(vm, Modifier.padding(padding))
+                1 -> SettingsTab(vm, Modifier.padding(padding))
+                else -> DebugTab(
+                    vm = vm,
+                    csvFiles = csvFiles,
+                    onCsvFilesLoaded = { csvFiles = it },
+                    onShowCsvPicker = { showCsvPicker = it },
+                    onRequestLabPermissions = onRequestLabPermissions,
+                    modifier = Modifier.padding(padding),
+                )
+            }
         }
     }
 
