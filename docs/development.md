@@ -152,3 +152,24 @@ $ADB pull /sdcard/Android/data/com.metrostop.reminder/files/logs .\logs         
 > 现场诊断依赖三处：App 内「实时调试面板」、CSV 三件套、`dumpsys`。
 > 若确实需要日志，请在 `platform/` 层加 `android.util.Log`（不要在 `core/` 里加）。
 
+
+## 2026-10-11 环境故障：Gradle 守护进程无法连接（java.exe 回环被拦）
+
+**现象**：所有 `./gradlew` 命令报 `Could not connect to the Gradle daemon`（daemon 启动、注册、10 秒后因「no longer found in the daemon registry」自杀）。当日 00:15 后开始出现，13:22 起必失败。
+
+**诊断证据**（已用最小重现定位到 JVM 层）：
+- Java 作为**服务端**监听 127.0.0.1 → netstat 显示 LISTENING，但 **Java 自连 / Python 连入全部 `Connection timed out`**；
+- Python 服务端 + Java 客户端连接 **正常**（Java 出站到非 Java 监听端口没问题）；
+- Python↔Python 回环正常 → 排除通用回环故障；
+- 所以：**问题出在「连入 Java 进程监听的端口」这一侧**，Gradle 守护进程正是这种通信模式；
+- 系统内存在火绒安全软件（HipsDaemon / HrASDaemon，火绒 HIPS 常拦 Java ServerSocket accept）；无权限查询/修改防火墙规则（拒绝访问）。
+- 时间线：00:15 最后一次成功全量测试（153 项）→ 13:22 后 daemon 连接必失败（其间环境可能发生安全软件更新 / 网络过滤变化，未确认）。
+
+**处置（待用户操作，AI 不擅自改安全软件策略）**：
+1. 优先：火绒「安全工具 → 网络防护 / 联网控制」中检查是否有 java.exe 的拦截记录；或将 `D:\Java\jdk-17.0.20.1+1\bin\java.exe` 加入信任/放行；
+2. 或临时退出火绒验证（`HipsDaemon`/`HrASDaemon` 停止后重跑 `./gradlew cleanTest test`）；
+3. 恢复后：重跑 `cleanTest test`（期望 153 项）+ `assembleDebug`，然后继续装机流程。
+
+**绕过尝试（均失败，记录避坑）**：`--no-daemon`、`-Dorg.gradle.daemon=false`、清空 `~/.gradle/daemon/registry.bin`、IPv4 强制、复制 java.exe 改名运行、移除 gradle.properties 的 jvmargs——因为 Gradle 客户端-构建进程通信就是回环 TCP（单次 fork 也走同一机制）。
+
+**✅ 结案（2026-10-11 17:00）**：**用户重启电脑后故障消失**（`gradlew --version` 正常，daemon 连接恢复）——未逐项验证是火绒还是其它驱动所为（嫌疑还含深信服 aTrust 过滤驱动 `aTrustNetflt_1`），按「重启解决」结案。**复发时按上面诊断路径 + 优先重启处置**。复跑结果：`cleanTest test --rerun-tasks` 153 项全绿（**实操复证：`cleanTest test` 不带 `--rerun-tasks` 时 `testDebugUnitTest` 仍 UP-TO-DATE——测试门验证一律加 `--rerun-tasks`**，2026-10-01 教训再现）。
