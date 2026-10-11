@@ -9,6 +9,10 @@ import com.metrostop.reminder.core.model.TuningConfig
  * - 主服务小区命中映射（主服务不中再试邻区）→ 候选站区；**连续 ≥[TuningConfig.cellZoneConfirmSamples] 拍
  *   同一候选 → 确认进区**（防单拍抖动 / 邻区列表瞬闪）；
  * - 当前小区不命中任何站区 → 立即退区（1 Hz 粒度下退区延迟 ≤1 拍，影响可忽略）；
+ * - **空样本（无主服务且无邻区）不改变状态**（2026-10-10 实测修正）：平台在 App 后台
+ *   「回调来、内容空」（主链路空行率 51~86%）——空样本代表「无数据」而非「已离开站区」，
+ *   旧实现按「不命中」立即退区，把站区打碎成 6~12 s 片段（24/24 次退区由空行触发）、
+ *   与 IMU 候选相位错位导致大面积漏站。离站仍由「**非空**样本不命中任何站区」判定，语义不变；
  * - 站区是**位置区间**（同一 pci:ci 可覆盖相邻多站，实测 4 号线 701 区覆盖两站）。
  *
  * 全因果：只依赖输入样本序列；回放与现场喂同样的序列即得同样的状态（硬性规则 1）。
@@ -54,9 +58,13 @@ class CellZoneTracker(
      * @param mainCell 主服务小区标识 `pci:ci`（空串 / null = 无服务）
      * @param neighbors 邻区标识列表（主服务不中时兜底匹配）
      * @return 本次产生的进区 / 退区转移（供会话层发事件与副作用）
+     *
+     * 空样本（main 空且 neighbors 空）= 平台「回调来、内容空」（后台数据不可得，2026-10-10）
+     * → **保持当前站区与候选**，什么都不变更；离站判定只吃非空样本（见类注释）。
      */
     fun onCell(tMs: Long, mainCell: String?, neighbors: List<String>): List<ZoneTransition> {
         if (!active) return emptyList()
+        if (mainCell.isNullOrBlank() && neighbors.isEmpty()) return emptyList()
         val zone = resolve(mainCell, neighbors)
         return if (zone != null) {
             if (zone == candidate) {

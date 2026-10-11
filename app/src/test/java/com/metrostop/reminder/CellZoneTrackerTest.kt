@@ -109,6 +109,22 @@ class CellZoneTrackerTest {
     }
 
     @Test
+    fun `空样本保持当前站区_无数据不等于已离开`() {
+        val t = CellZoneTracker(lineMap, config)
+        t.onCell(1000, "721:38656778242", emptyList())
+        t.onCell(2000, "721:38656778242", emptyList())
+        assertEquals(1..1, t.confirmedRange)
+        // 平台后台「回调来、内容空」（2026-10-10 实测空行率 51~86%）：空样本不得退区
+        assertTrue(t.onCell(3000, null, emptyList()).isEmpty())
+        assertTrue(t.onCell(4000, "", emptyList()).isEmpty())
+        assertEquals("空样本不得改变已确认站区（旧实现立即退区 → 站区碎片化）", 1..1, t.confirmedRange)
+        // 非空样本不命中任何站区才是真正的离站
+        val tr = t.onCell(5000, "999:888", emptyList())
+        assertEquals(listOf<ZoneTransition>(ZoneTransition.Exited(5000)), tr)
+        assertNull(t.confirmedRange)
+    }
+
+    @Test
     fun `映射缺失时跟踪器不激活`() {
         val t = CellZoneTracker(null, config)
         assertTrue(!t.active)

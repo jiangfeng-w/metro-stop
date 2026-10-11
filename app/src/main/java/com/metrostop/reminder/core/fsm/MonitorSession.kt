@@ -230,17 +230,24 @@ class MonitorSession(
             val zone = zoneTracker.confirmedRange
             val expected = stationCount + 1
             // 侦察补检：区内放宽静稳跨度（原始 vibStopTh 形不成跨度的晨高峰漏检站）。
-            // 启用条件两类：
+            // 启用条件三类：
             // - `zone.first >= expected`：单站区间 / 站区前进位（含漏检重同步自愈）；
             // - `expected in zone && lastZoneEventMs > lastCountedMs`：**共享区间**（区间覆盖相邻
             //   多站，实测 6 号线 847 同时服务陆肖/观东 = 11..12）。共享区间内必须先由一次**新的
             //   区转移**（离站后重新进区，通常即目的站进近）解除歧义，才能把静稳归给期望站——
             //   否则在前一站站台长停时就会把它的静稳误判成下一站到站（10-08 晚「提前 93s 报到达」
             //   即此类；旧映射把它做成单站区间才没暴露）。
+            // - **STOPPED 下仅当本区尚未计数时放行**（2026-10-10 修复）：候选先于区确认被拦
+            //   （zone=none）时检测器已入 STOPPED，原 `state != STOPPED` 把补救侦察一并挡死
+            //   （10-10 晚三官堂 24 s 区窗内静稳充足却不跑 → 漏站；琉璃场同型）。本区进区晚于
+            //   最近计数（confirmedAtMs > lastCountedMs）= 本区还没计过数 → 允许侦察补计；
+            //   本区计过数后该条件为假、恢复原限制（防同一停站重复计数；重复候选另有
+            //   「期望位越出区间 → ZONE_SUPPRESSED」与共享区 `minStopIntervalSec` 兜底）。
+            val zoneUncounted = zoneTracker.confirmedAtMs > lastCountedMs
             if (zone != null && expected <= route.stopCount &&
                 (zone.first >= expected ||
                     (expected in zone && lastZoneEventMs > lastCountedMs)) &&
-                detector.state != DetectorState.STOPPED
+                (detector.state != DetectorState.STOPPED || zoneUncounted)
             ) {
                 if (f.vib < config.zoneStillVibTh) {
                     if (zoneStillStartMs == 0L) zoneStillStartMs = f.tMs
